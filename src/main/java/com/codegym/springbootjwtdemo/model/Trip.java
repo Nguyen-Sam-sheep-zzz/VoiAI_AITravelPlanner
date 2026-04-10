@@ -1,0 +1,103 @@
+package com.codegym.springbootjwtdemo.model;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Entity
+@Table(name = "trips")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Trip {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnore
+    private User user;
+
+    @Column(nullable = false, length = 200)
+    private String title;
+
+    @Column(name = "destination_name", nullable = false, length = 300)
+    private String destinationName;
+
+    @Column(name = "dest_lat", precision = 10, scale = 6)
+    private BigDecimal destLat;
+
+    @Column(name = "dest_lng", precision = 10, scale = 6)
+    private BigDecimal destLng;
+
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    @Column(name = "end_date")
+    private LocalDate endDate;
+
+    @Column(name = "num_days", nullable = false)
+    private Integer numDays;
+
+    @Column(name = "budget_total", precision = 15, scale = 2)
+    private BigDecimal budgetTotal;
+
+    @Column(length = 10)
+    @Builder.Default
+    private String currency = "VND";
+
+    @Column(columnDefinition = "TEXT")
+    private String notes;
+
+    // UUID để tạo link chia sẻ public
+    @Column(name = "share_token", unique = true, length = 100)
+    private String shareToken;
+
+    @Column(name = "is_public", nullable = false)
+    @Builder.Default
+    private Boolean isPublic = false;
+
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL,
+            orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("dayNumber ASC")
+    private List<TripDay> tripDays = new ArrayList<>();
+
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BudgetEntry> budgetEntries = new ArrayList<>();
+
+    @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<WeatherCache> weatherCaches = new ArrayList<>();
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+        if (shareToken == null) {
+            shareToken = UUID.randomUUID().toString().replace("-", "");
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}
