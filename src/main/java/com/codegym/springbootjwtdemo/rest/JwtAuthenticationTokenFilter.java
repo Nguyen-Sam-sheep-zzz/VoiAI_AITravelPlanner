@@ -28,7 +28,9 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
 
     // Các route này không cần xử lý JWT — bỏ qua luôn cho nhẹ
     private static final String[] PUBLIC_PATHS = {
-            "/api/auth/",
+            "/api/auth/login",
+            "/api/auth/register",
+            "/api/public/",
             "/api/trips/share/",
             "/actuator/health"
     };

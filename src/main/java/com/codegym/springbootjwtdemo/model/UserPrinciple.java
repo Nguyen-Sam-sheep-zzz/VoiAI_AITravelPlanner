@@ -10,14 +10,15 @@ import java.util.List;
 
 public class UserPrinciple implements UserDetails {
     private static final long serialVersionUID = 1L;
+    private final User user;
     private final String username;
     private final String password;
     private Collection<? extends GrantedAuthority> roles;
 
-    public UserPrinciple(String username, String password,
-                         Collection<? extends GrantedAuthority> roles) {
-        this.username = username;
-        this.password = password;
+    public UserPrinciple(User user, Collection<? extends GrantedAuthority> roles) {
+        this.user = user;
+        this.username = user.getEmail();
+        this.password = user.getPasswordHash();
         this.roles = roles;
     }
 
@@ -26,10 +27,11 @@ public class UserPrinciple implements UserDetails {
         for (Role role : user.getRoles()) {
             authorities.add(new SimpleGrantedAuthority(role.getName()));
         }
+        return new UserPrinciple(user, authorities);
+    }
 
-        return new UserPrinciple(user.getEmail(),
-                user.getPasswordHash(),
-                authorities);
+    public User getUser() {
+        return user;
     }
 
     @Override

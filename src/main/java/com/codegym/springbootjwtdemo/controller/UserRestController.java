@@ -1,6 +1,5 @@
 package com.codegym.springbootjwtdemo.controller;
 
-
 import com.codegym.springbootjwtdemo.model.Role;
 import com.codegym.springbootjwtdemo.model.User;
 import com.codegym.springbootjwtdemo.model.dto.UserDTO;
