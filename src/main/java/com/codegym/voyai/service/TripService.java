@@ -1,11 +1,9 @@
 package com.codegym.voyai.service;
 
-import com.codegym.voyai.model.Activity;
-import com.codegym.voyai.model.Trip;
-import com.codegym.voyai.model.TripDay;
-import com.codegym.voyai.model.User;
+import com.codegym.voyai.model.*;
 import com.codegym.voyai.model.dto.TripRequest;
 import com.codegym.voyai.model.dto.travel.TravelItinerary;
+import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
 import com.codegym.voyai.repository.IActivityRepository;
 import com.codegym.voyai.repository.ITripDayRepository;
 import com.codegym.voyai.repository.ITripRepository;
@@ -17,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -31,6 +30,7 @@ public class TripService {
     private final IActivityRepository activityRepository;
     private final GeminiService geminiService;
     private final UserService userService;
+    private final WeatherService weatherService;
 
     @Transactional
     public Trip createTrip(TripRequest request, String userEmail) {
@@ -52,7 +52,7 @@ public class TripService {
                 request.getLng()
         );
 
-        Trip trip = Trip.builder()
+        final Trip trip = Trip.builder()
                 .user(user)
                 .title("Chuyến đi " + request.getDestination())
                 .destinationName(request.getDestination())
@@ -65,7 +65,28 @@ public class TripService {
                 .currency(request.getCurrency())
                 .notes(request.getNotes())
                 .tripDays(new LinkedHashSet<>())
+                .weatherCaches(new ArrayList<>())
                 .build();
+
+        try {
+            List<DailyWeatherDTO> forecast = weatherService.getForecast(request.getLat(), request.getLng());
+            if (forecast != null && !forecast.isEmpty()) {
+                List<WeatherCache> caches = forecast.stream().map(w -> {
+                    return WeatherCache.builder()
+                            .trip(trip) // Sử dụng biến final newTrip
+                            .forecastDate(LocalDate.parse(w.getDate())) // Map vào forecastDate
+                            .temperatureMax(w.getTempMax() != null ? BigDecimal.valueOf(w.getTempMax()) : null)
+                            .temperatureMin(w.getTempMin() != null ? BigDecimal.valueOf(w.getTempMin()) : null)
+                            .weatherCode(w.getWeatherCode()) // Map mã WMO để @PrePersist tự tính isRainy
+                            .precipitationMm(w.getPrecipitation() != null ? BigDecimal.valueOf(w.getPrecipitation()) : null)
+                            .build();
+                }).toList();
+
+                trip.setWeatherCaches(new ArrayList<>(caches));
+            }
+        } catch (Exception e) {
+            log.warn("Lỗi khi lưu cache thời tiết: {}", e.getMessage());
+        }
 
         if (itinerary != null && itinerary.getItinerary() != null) {
             for (TravelItinerary.DayItinerary dayData : itinerary.getItinerary()) {
@@ -102,8 +123,7 @@ public class TripService {
             }
         }
 
-        trip = tripRepository.save(trip);
-        return trip;
+        return tripRepository.save(trip);
     }
 
     public List<Trip> getMyTrips(String userEmail) {

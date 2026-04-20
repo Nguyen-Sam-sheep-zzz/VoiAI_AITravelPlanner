@@ -32,7 +32,7 @@ public class JwtAuthenticationTokenFilter extends OncePerRequestFilter {
             "/api/auth/register",
             "/api/public/",
             "/api/trips/share/",
-            "/actuator/health"
+            "/actuator/health",
     };
 
     @Override

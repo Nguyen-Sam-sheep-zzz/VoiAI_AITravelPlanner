@@ -79,10 +79,12 @@ public class Trip {
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @EqualsAndHashCode.Exclude
+    @Builder.Default
     private List<BudgetEntry> budgetEntries = new ArrayList<>();
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @EqualsAndHashCode.Exclude
+    @Builder.Default
     private List<WeatherCache> weatherCaches = new ArrayList<>();
 
     @PrePersist

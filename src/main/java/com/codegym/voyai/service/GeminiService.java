@@ -3,7 +3,7 @@ package com.codegym.voyai.service;
 import com.codegym.voyai.model.dto.gemini.GeminiRequest;
 import com.codegym.voyai.model.dto.gemini.GeminiResponse;
 import com.codegym.voyai.model.dto.travel.TravelItinerary;
-import com.codegym.voyai.model.dto.weather.WeatherResponse;
+import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,20 +67,22 @@ public class GeminiService {
         try {
             // 1. Lấy thông tin địa điểm từ NOMINATIM
             NominatimService.NominatimResult placeDetails = nominatimService.getPlaceDetails(placeId);
-
-            if (placeDetails == null) {
-                log.error("Không tìm thấy place details cho placeId={}", placeId);
-                throw new IllegalArgumentException(
-                        "Không tìm thấy thông tin địa điểm cho điểm đến đã chọn"
-                );
-            }
+            if (placeDetails == null) throw new IllegalArgumentException("Không tìm thấy địa điểm");
 
             double lat = Double.parseDouble(placeDetails.getLat());
             double lng = Double.parseDouble(placeDetails.getLon());
 
             // 2. Lấy dự báo thời tiết
-            WeatherResponse weatherForecast = weatherService.getForecast(lat, lng);
-            String weatherContext = buildWeatherContext(weatherForecast, days);
+            List<DailyWeatherDTO> forecast = List.of();
+            String weatherContext = "Thời tiết: Không có dữ liệu dự báo cụ thể.";
+            try {
+                forecast = weatherService.getForecast(lat, lng);
+                if (!forecast.isEmpty()) {
+                    weatherContext = buildWeatherContext(forecast, days);
+                }
+            } catch (Exception e) {
+                log.warn("Lỗi lấy thời tiết: {}", e.getMessage());
+            }
 
             // 3. Tạo prompt với context đầy đủ
             String prompt = createEnhancedPrompt(
@@ -128,7 +130,7 @@ public class GeminiService {
             TravelItinerary itinerary = parseResponse(response);
 
             // 5. Enrich với thông tin Nominatim và Weather
-            enrichItinerary(itinerary, placeDetails, weatherForecast, startDate);
+            enrichItinerary(itinerary, placeDetails, forecast, startDate);
 
             return itinerary;
 
@@ -139,6 +141,40 @@ public class GeminiService {
         } catch (Exception e) {
             log.error("❌ Unexpected error: ", e);
             throw new RuntimeException("Lỗi khi tạo lịch trình: " + e.getMessage(), e);
+        }
+    }
+
+    private void enrichSimpleItinerary(
+            TravelItinerary itinerary,
+            List<DailyWeatherDTO> forecast,
+            double lat,
+            double lng,
+            String destination) {
+
+        // Mock thông tin destination đơn giản
+        TravelItinerary.DestinationInfo destInfo = new TravelItinerary.DestinationInfo();
+        destInfo.setFullName(destination);
+        destInfo.setLat(lat);
+        destInfo.setLng(lng);
+        itinerary.setDestinationInfo(destInfo);
+
+        // Dùng lại logic enrich weather bạn đã viết
+        if (forecast != null && !forecast.isEmpty()) {
+            TravelItinerary.WeatherSummary summary = new TravelItinerary.WeatherSummary();
+            double avgMax = forecast.stream().mapToDouble(DailyWeatherDTO::getTempMax).average().orElse(30.0);
+            double avgMin = forecast.stream().mapToDouble(DailyWeatherDTO::getTempMin).average().orElse(20.0);
+            summary.setAvgTemp((avgMax + avgMin) / 2);
+            summary.setMinTemp(avgMin);
+            summary.setMaxTemp(avgMax);
+            summary.setCondition(forecast.get(0).getCondition());
+            summary.setRecommendation(forecast.get(0).getRecommendation());
+            itinerary.setWeatherSummary(summary);
+        }
+
+        // Gán ngày mặc định bắt đầu từ ngày mai nếu không có startDate
+        LocalDate date = LocalDate.now().plusDays(1);
+        for (int i = 0; i < itinerary.getItinerary().size(); i++) {
+            itinerary.getItinerary().get(i).setDate(date.plusDays(i).toString());
         }
     }
 
@@ -154,12 +190,12 @@ public class GeminiService {
             double lng) {
 
         try {
-            // ✅ Bỏ qua weather nếu service chưa sẵn sàng — không ảnh hưởng Gemini
+            List<DailyWeatherDTO> forecast = List.of();
             String weatherContext = "Thời tiết: Vui lòng kiểm tra dự báo trước khi đi.";
             try {
-                WeatherResponse weatherForecast = weatherService.getForecast(lat, lng);
-                if (weatherForecast != null) {
-                    weatherContext = buildWeatherContext(weatherForecast, days);
+                forecast = weatherService.getForecast(lat, lng);
+                if (!forecast.isEmpty()) {
+                    weatherContext = buildWeatherContext(forecast, days);
                 }
             } catch (Exception e) {
                 log.warn("Bỏ qua weather context: {}", e.getMessage());
@@ -183,17 +219,16 @@ public class GeminiService {
                     .header("Content-Type", "application/json")
                     .bodyValue(request)
                     .retrieve()
-                    .onStatus(
-                            status -> status.equals(HttpStatus.UNAUTHORIZED),
-                            clientResponse -> clientResponse.bodyToMono(String.class)
-                                    .map(body -> new RuntimeException("API Key không hợp lệ: " + body))
-                    )
                     .bodyToMono(GeminiResponse.class)
                     .timeout(Duration.ofMillis(timeout))
                     .block();
 
             log.info("✅ Gemini response received");
-            return parseResponse(response);
+
+            TravelItinerary itinerary = parseResponse(response);
+
+            enrichSimpleItinerary(itinerary, forecast, lat, lng, destination);
+            return itinerary;
 
         } catch (WebClientResponseException e) {
             log.error("❌ HTTP Error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
@@ -204,34 +239,28 @@ public class GeminiService {
         }
     }
 
-    private String buildWeatherContext(WeatherResponse forecast, int days) {
-        if (forecast == null || forecast.getList() == null) {
-            return "Thông tin thời tiết không khả dụng.";
+    private String buildWeatherContext(List<DailyWeatherDTO> forecast, int days) {
+        if (forecast == null || forecast.isEmpty()) {
+            return "Thời tiết: Không lấy được dự báo, hãy lên kế hoạch linh hoạt.";
         }
 
-        StringBuilder context = new StringBuilder("DỰ BÁO THỜI TIẾT:\n");
+        StringBuilder sb = new StringBuilder("DỰ BÁO THỜI TIẾT:\n");
+        int limit = Math.min(days, forecast.size());
 
-        // Lấy thời tiết cho từng ngày
-        for (int i = 0; i < Math.min(days, 5); i++) {
-            LocalDate date = LocalDate.now().plusDays(i);
-            WeatherResponse.WeatherForecast dayWeather = weatherService.getWeatherForDate(
-                    forecast.getCity().getCoord().getLat(),
-                    forecast.getCity().getCoord().getLon(),
-                    date
-            );
-
-            if (dayWeather != null) {
-                context.append(String.format(
-                        "Ngày %d: Nhiệt độ %.1f°C, %s, Độ ẩm %d%%\n",
-                        i + 1,
-                        dayWeather.getMain().getTemp(),
-                        dayWeather.getWeather().get(0).getDescription(),
-                        dayWeather.getMain().getHumidity()
-                ));
-            }
+        for (int i = 0; i < limit; i++) {
+            DailyWeatherDTO day = forecast.get(i);
+            sb.append(String.format(
+                    "Ngày %d (%s): %s, Cao %.1f°C / Thấp %.1f°C, Mưa %.1fmm%s\n",
+                    i + 1,
+                    day.getDate(),
+                    day.getCondition(),
+                    day.getTempMax(),
+                    day.getTempMin(),
+                    day.getPrecipitation(),
+                    day.getIsRainy() ? " ⚠️ CÓ MƯA" : ""
+            ));
         }
-
-        return context.toString();
+        return sb.toString();
     }
 
     private String createEnhancedPrompt(
@@ -262,7 +291,8 @@ public class GeminiService {
                         4. Mỗi ngày có 4-6 hoạt động
                         5. Tọa độ GPS PHẢI chính xác với địa điểm thực tế tại %s
                         6. Chi phí ước tính hợp lý (VNĐ)
-                        
+                        7. QUAN TRỌNG: Mỗi activity BẮT BUỘC phải có "time" theo format HH:mm
+                               Ví dụ: 08:00, 10:30, 13:00, 15:30, 19:00
                         Trả về JSON theo format:
                         {
                           "destination": "%s",
@@ -299,79 +329,53 @@ public class GeminiService {
     private void enrichItinerary(
             TravelItinerary itinerary,
             NominatimService.NominatimResult placeDetails,
-            WeatherResponse weatherForecast,
+            List<DailyWeatherDTO> forecast, // Đổi từ WeatherResponse sang List DTO mới
             LocalDate startDate) {
 
         // Thêm thông tin destination
         TravelItinerary.DestinationInfo destInfo = new TravelItinerary.DestinationInfo();
         destInfo.setPlaceId(placeDetails.getOsmId() != null ? placeDetails.getOsmId().toString() : placeDetails.getPlaceId().toString());
-        destInfo.setFullName(placeDetails.getCityName());
-        destInfo.setAddress(placeDetails.getDisplayName());
+        destInfo.setFullName(placeDetails.getDisplayName());
         destInfo.setLat(Double.parseDouble(placeDetails.getLat()));
         destInfo.setLng(Double.parseDouble(placeDetails.getLon()));
-
-        // Nominatim không có photos, để empty list
         destInfo.setPhotos(List.of());
-
         itinerary.setDestinationInfo(destInfo);
 
         // Thêm weather summary
-        if (weatherForecast != null && weatherForecast.getList() != null) {
-            TravelItinerary.WeatherSummary weatherSummary = new TravelItinerary.WeatherSummary();
+        if (forecast != null && !forecast.isEmpty()) {
+            TravelItinerary.WeatherSummary summary = new TravelItinerary.WeatherSummary();
 
-            double avgTemp = weatherForecast.getList().stream()
-                    .mapToDouble(f -> f.getMain().getTemp())
-                    .average()
-                    .orElse(25.0);
+            double avgMax = forecast.stream().mapToDouble(DailyWeatherDTO::getTempMax).average().orElse(30.0);
+            double avgMin = forecast.stream().mapToDouble(DailyWeatherDTO::getTempMin).average().orElse(20.0);
 
-            double minTemp = weatherForecast.getList().stream()
-                    .mapToDouble(f -> f.getMain().getTempMin())
-                    .min()
-                    .orElse(20.0);
+            summary.setAvgTemp((avgMax + avgMin) / 2);
+            summary.setMinTemp(avgMin);
+            summary.setMaxTemp(avgMax);
+            summary.setCondition(forecast.get(0).getCondition());
+            summary.setRecommendation(forecast.get(0).getRecommendation());
 
-            double maxTemp = weatherForecast.getList().stream()
-                    .mapToDouble(f -> f.getMain().getTempMax())
-                    .max()
-                    .orElse(30.0);
-
-            weatherSummary.setAvgTemp(avgTemp);
-            weatherSummary.setMinTemp(minTemp);
-            weatherSummary.setMaxTemp(maxTemp);
-            weatherSummary.setCondition(weatherForecast.getList().get(0).getWeather().get(0).getMain());
-            weatherSummary.setHumidity(weatherForecast.getList().get(0).getMain().getHumidity());
-            weatherSummary.setRecommendation(weatherService.getWeatherRecommendation(
-                    weatherForecast.getList().get(0)
-            ));
-
-            itinerary.setWeatherSummary(weatherSummary);
+            itinerary.setWeatherSummary(summary);
         }
 
         // Thêm thông tin cho từng ngày
         for (int i = 0; i < itinerary.getItinerary().size(); i++) {
-            TravelItinerary.DayItinerary day = itinerary.getItinerary().get(i);
-
-            // Thêm date
+            TravelItinerary.DayItinerary dayDto = itinerary.getItinerary().get(i);
             LocalDate dayDate = startDate.plusDays(i);
-            day.setDate(dayDate.toString());
+            dayDto.setDate(dayDate.toString());
 
-            // Thêm daily weather
-            if (weatherForecast != null) {
-                WeatherResponse.WeatherForecast dayWeather = weatherService.getWeatherForDate(
-                        Double.parseDouble(placeDetails.getLat()),
-                        Double.parseDouble(placeDetails.getLon()),
-                        dayDate
-                );
-
-                if (dayWeather != null) {
-                    TravelItinerary.DailyWeather dailyWeather = new TravelItinerary.DailyWeather();
-                    dailyWeather.setTemp(dayWeather.getMain().getTemp());
-                    dailyWeather.setCondition(dayWeather.getWeather().get(0).getMain());
-                    dailyWeather.setIcon(dayWeather.getWeather().get(0).getIcon());
-                    dailyWeather.setHumidity(dayWeather.getMain().getHumidity());
-                    dailyWeather.setRainChance(dayWeather.getRain() != null ? dayWeather.getRain().getThreeHour() : 0);
-
-                    day.setWeather(dailyWeather);
-                }
+            if (forecast != null) {
+                // Tìm weather trùng ngày
+                forecast.stream()
+                        .filter(w -> w.getDate().equals(dayDate.toString()))
+                        .findFirst()
+                        .ifPresent(w -> {
+                            TravelItinerary.DailyWeather dw = new TravelItinerary.DailyWeather();
+                            dw.setTemp(w.getTempMax()); // Hoặc trung bình max/min
+                            dw.setCondition(w.getCondition());
+                            dw.setIcon(w.getIcon());
+                            dw.setRainChance(w.getIsRainy() ? 100.0 : 0.0); // Open-Meteo daily ko có % mưa chính xác ở code của bạn
+                            dayDto.setWeather(dw);
+                        });
             }
         }
     }
