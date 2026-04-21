@@ -22,7 +22,7 @@ public class Trip {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = true)
     @JsonIgnore
     private User user;
 
@@ -70,6 +70,9 @@ public class Trip {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Column(name = "session_id", length = 100)
+    private String sessionId;
 
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("dayNumber ASC")

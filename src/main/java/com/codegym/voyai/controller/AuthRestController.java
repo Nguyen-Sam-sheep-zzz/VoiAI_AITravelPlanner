@@ -8,6 +8,7 @@ import com.codegym.voyai.model.dto.AuthResponse;
 import com.codegym.voyai.model.dto.LoginRequest;
 import com.codegym.voyai.model.dto.RegisterRequest;
 import com.codegym.voyai.repository.IRoleRepository;
+import com.codegym.voyai.service.TripService;
 import com.codegym.voyai.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class AuthRestController {
     private final UserService userService;
     private final JwtService jwtService;
     private final IRoleRepository roleRepository;
+    private final TripService tripService;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
@@ -99,4 +101,24 @@ public class AuthRestController {
                 "fullName", principal.getUser().getFullName()
         ));
     }
+
+    // Gọi sau khi login thành công — chuyển guest trips → user
+    @PostMapping("/claim-trips")
+    public ResponseEntity<?> claimTrips(
+            @RequestHeader(value = "X-Session-Id", required = false) String sessionId,
+            Authentication auth) {
+
+        if (sessionId == null || sessionId.isBlank()) {
+            return ResponseEntity.ok(Map.of("claimed", 0));
+        }
+
+        int count = tripService.claimGuestTrips(sessionId, auth.getName());
+        return ResponseEntity.ok(Map.of(
+                "claimed", count,
+                "message", count > 0
+                        ? "Đã chuyển " + count + " chuyến đi vào tài khoản"
+                        : "Không có chuyến đi nào để chuyển"
+        ));
+    }
+
 }

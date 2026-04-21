@@ -32,28 +32,40 @@ public class TripService {
     private final UserService userService;
     private final WeatherService weatherService;
 
+    // --- 1. DÀNH CHO USER ĐÃ ĐĂNG NHẬP ---
     @Transactional
     public Trip createTrip(TripRequest request, String userEmail) {
-
         User user = userService.findByEmail(userEmail);
         if (user == null) throw new RuntimeException("User không tồn tại");
 
+        Trip trip = buildBaseTrip(request);
+        trip.setUser(user); // Gắn user
+
+        return saveAndProcessItinerary(trip, request);
+    }
+
+    // --- 2. DÀNH CHO KHÁCH (GUEST) ---
+    @Transactional
+    public Trip createGuestTrip(TripRequest request, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new RuntimeException("Session ID không hợp lệ");
+        }
+
+        Trip trip = buildBaseTrip(request);
+        trip.setSessionId(sessionId); // Gắn sessionId
+
+        return saveAndProcessItinerary(trip, request);
+    }
+
+    // --- 3. LOGIC HỖ TRỢ DÙNG CHUNG ---
+
+    // Hàm tạo "Xương" cho Trip (giúp code ngắn gọn hơn)
+    private Trip buildBaseTrip(TripRequest request) {
         LocalDate startDate = request.getStartDate() != null
                 ? request.getStartDate()
                 : LocalDate.now().plusDays(1);
 
-        log.info("Calling Gemini for: {}", request.getDestination());
-        TravelItinerary itinerary = geminiService.generateSimpleTravelItinerary(
-                request.getDestination(),
-                request.getNumDays(),
-                formatBudget(request.getBudgetTotal(), request.getCurrency()),
-                request.getNotes(),
-                request.getLat(),
-                request.getLng()
-        );
-
-        final Trip trip = Trip.builder()
-                .user(user)
+        return Trip.builder()
                 .title("Chuyến đi " + request.getDestination())
                 .destinationName(request.getDestination())
                 .destLat(BigDecimal.valueOf(request.getLat()))
@@ -64,40 +76,38 @@ public class TripService {
                 .budgetTotal(request.getBudgetTotal())
                 .currency(request.getCurrency())
                 .notes(request.getNotes())
-                .tripDays(new LinkedHashSet<>())
+                .tripDays(new LinkedHashSet<>()) // Khởi tạo Set để tránh null
                 .weatherCaches(new ArrayList<>())
                 .build();
+    }
 
-        try {
-            List<DailyWeatherDTO> forecast = weatherService.getForecast(request.getLat(), request.getLng());
-            if (forecast != null && !forecast.isEmpty()) {
-                List<WeatherCache> caches = forecast.stream().map(w -> {
-                    return WeatherCache.builder()
-                            .trip(trip) // Sử dụng biến final newTrip
-                            .forecastDate(LocalDate.parse(w.getDate())) // Map vào forecastDate
-                            .temperatureMax(w.getTempMax() != null ? BigDecimal.valueOf(w.getTempMax()) : null)
-                            .temperatureMin(w.getTempMin() != null ? BigDecimal.valueOf(w.getTempMin()) : null)
-                            .weatherCode(w.getWeatherCode()) // Map mã WMO để @PrePersist tự tính isRainy
-                            .precipitationMm(w.getPrecipitation() != null ? BigDecimal.valueOf(w.getPrecipitation()) : null)
-                            .build();
-                }).toList();
+    // Hàm xử lý lưu Trip, Gemini và các Day/Activity
+    private Trip saveAndProcessItinerary(Trip trip, TripRequest request) {
+        // Lưu Trip trước để lấy ID
+        Trip savedTrip = tripRepository.save(trip);
 
-                trip.setWeatherCaches(new ArrayList<>(caches));
-            }
-        } catch (Exception e) {
-            log.warn("Lỗi khi lưu cache thời tiết: {}", e.getMessage());
-        }
+        // Gọi Gemini lấy lịch trình
+        TravelItinerary itinerary = geminiService.generateSimpleTravelItinerary(
+                request.getDestination(),
+                request.getNumDays(),
+                formatBudget(request.getBudgetTotal(), request.getCurrency()),
+                request.getNotes(),
+                request.getLat(),
+                request.getLng()
+        );
 
+        // Xử lý Lịch trình (Day & Activities)
         if (itinerary != null && itinerary.getItinerary() != null) {
             for (TravelItinerary.DayItinerary dayData : itinerary.getItinerary()) {
                 TripDay tripDay = TripDay.builder()
-                        .trip(trip)
+                        .trip(savedTrip)
                         .dayNumber(dayData.getDay())
-                        .tripDate(startDate.plusDays(dayData.getDay() - 1))
+                        .tripDate(savedTrip.getStartDate().plusDays(dayData.getDay() - 1))
                         .activities(new LinkedHashSet<>())
                         .build();
 
-                trip.getTripDays().add(tripDay);
+                tripDay = tripDayRepository.save(tripDay);
+                savedTrip.getTripDays().add(tripDay); // Đồng bộ vào bộ nhớ
 
                 if (dayData.getActivities() != null) {
                     int order = 0;
@@ -109,27 +119,60 @@ public class TripService {
                                 .description(actData.getReason())
                                 .startTime(parseTime(actData.getTime()))
                                 .locationName(actData.getActivity())
-                                .locationLat(actData.getLat() != null
-                                        ? BigDecimal.valueOf(actData.getLat()) : null)
-                                .locationLng(actData.getLng() != null
-                                        ? BigDecimal.valueOf(actData.getLng()) : null)
-                                .estimatedCost(actData.getEstimatedCost() != null
-                                        ? BigDecimal.valueOf(actData.getEstimatedCost()) : null)
+                                .locationLat(actData.getLat() != null ? BigDecimal.valueOf(actData.getLat()) : null)
+                                .locationLng(actData.getLng() != null ? BigDecimal.valueOf(actData.getLng()) : null)
+                                .estimatedCost(actData.getEstimatedCost() != null ? BigDecimal.valueOf(actData.getEstimatedCost()) : null)
                                 .build();
 
-                        tripDay.getActivities().add(activity);
+                        activityRepository.save(activity);
+                        tripDay.getActivities().add(activity); // Đồng bộ vào bộ nhớ
                     }
                 }
             }
         }
 
-        return tripRepository.save(trip);
+        // Gọi Weather (Optional - giữ nguyên logic cũ của bạn)
+        try {
+            processWeatherCache(savedTrip, request);
+        } catch (Exception e) {
+            log.warn("Lỗi lưu weather: {}", e.getMessage());
+        }
+
+        // Trả về trip đầy đủ dữ liệu bằng cách load lại từ DB
+        return getTripWithDetails(savedTrip.getId());
     }
+
+    // --- CÁC HÀM GET DỮ LIỆU ---
 
     public List<Trip> getMyTrips(String userEmail) {
         User user = userService.findByEmail(userEmail);
-        if (user == null) return List.of();
-        return tripRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
+        return user == null ? List.of() : tripRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
+    }
+
+    public List<Trip> getGuestTrips(String sessionId) {
+        return (sessionId == null || sessionId.isBlank()) ? List.of() : tripRepository.findBySessionIdOrderByCreatedAtDesc(sessionId);
+    }
+
+    private Trip getTripWithDetails(Long tripId) {
+        Trip trip = tripRepository.findByIdWithDays(tripId)
+                .orElseThrow(() -> new RuntimeException("Trip không tồn tại"));
+        tripDayRepository.findByTripIdWithActivities(tripId);
+        return trip;
+    }
+
+    private void processWeatherCache(Trip trip, TripRequest request) {
+        List<DailyWeatherDTO> forecast = weatherService.getForecast(request.getLat(), request.getLng());
+        if (forecast != null && !forecast.isEmpty()) {
+            List<WeatherCache> caches = forecast.stream().map(w -> WeatherCache.builder()
+                    .trip(trip)
+                    .forecastDate(LocalDate.parse(w.getDate()))
+                    .temperatureMax(w.getTempMax() != null ? BigDecimal.valueOf(w.getTempMax()) : null)
+                    .temperatureMin(w.getTempMin() != null ? BigDecimal.valueOf(w.getTempMin()) : null)
+                    .weatherCode(w.getWeatherCode())
+                    .precipitationMm(w.getPrecipitation() != null ? BigDecimal.valueOf(w.getPrecipitation()) : null)
+                    .build()).toList();
+            trip.setWeatherCaches(new ArrayList<>(caches));
+        }
     }
 
     public Trip getTripById(Long id, String userEmail) {
@@ -137,7 +180,7 @@ public class TripService {
         Trip trip = tripRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Trip không tồn tại"));
 
-        if (!trip.getUser().getEmail().equals(userEmail)) {
+        if (trip.getUser() == null || !trip.getUser().getEmail().equals(userEmail)) {
             throw new RuntimeException("Không có quyền truy cập");
         }
 
@@ -162,19 +205,6 @@ public class TripService {
         tripRepository.delete(trip);
     }
 
-    // ✅ Method dùng chung — tránh MultipleBagFetchException
-    // Dùng 2 query riêng thay vì 1 JOIN FETCH lồng nhau
-    private Trip getTripWithDetails(Long tripId) {
-        // Chỉ cần load Trip kèm Days
-        Trip trip = tripRepository.findByIdWithDays(tripId)
-                .orElseThrow(() -> new RuntimeException("Trip không tồn tại"));
-
-        // Sau đó load Days kèm Activities (Hibernate sẽ tự map vào Trip đang có trong Persistence Context)
-        tripDayRepository.findByTripIdWithActivities(tripId);
-
-        return trip;
-    }
-
     private String formatBudget(BigDecimal budget, String currency) {
         if (budget == null) return "Không giới hạn";
         return budget.toPlainString() + " " + (currency != null ? currency : "VND");
@@ -187,5 +217,29 @@ public class TripService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    @Transactional
+    public int claimGuestTrips(String sessionId, String userEmail) {
+        if (sessionId == null || sessionId.isBlank()) return 0;
+
+        User user = userService.findByEmail(userEmail);
+        if (user == null) throw new RuntimeException("User không tồn tại");
+
+        int count = tripRepository.claimTripsBySession(sessionId, user);
+        log.info("Claimed {} trips từ session {} → user {}", count, sessionId, userEmail);
+        return count;
+    }
+
+    // Lấy trip của guest — kiểm tra sessionId thay vì email
+    public Trip getGuestTripById(Long id, String sessionId) {
+        Trip trip = tripRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Trip không tồn tại"));
+
+        if (!sessionId.equals(trip.getSessionId())) {
+            throw new RuntimeException("Không có quyền truy cập");
+        }
+
+        return getTripWithDetails(id);
     }
 }
