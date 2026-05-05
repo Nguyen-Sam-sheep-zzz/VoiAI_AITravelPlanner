@@ -1,5 +1,7 @@
 package com.codegym.voyai.service;
 
+import com.codegym.voyai.model.Activity;
+import com.codegym.voyai.model.DestinationCost;
 import com.codegym.voyai.model.dto.gemini.GeminiRequest;
 import com.codegym.voyai.model.dto.gemini.GeminiResponse;
 import com.codegym.voyai.model.dto.travel.TravelItinerary;
@@ -9,9 +11,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.netty.http.client.HttpClient;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -46,6 +50,10 @@ public class GeminiService {
                          NominatimService nominatimService) { // Thay GoogleMapsService
         this.webClient = webClientBuilder
                 .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .clientConnector(new ReactorClientHttpConnector(
+                        HttpClient.create()
+                                .responseTimeout(Duration.ofSeconds(60)) // Chờ tối đa 60s để nhận phản hồi
+                ))
                 .build();
         this.objectMapper = objectMapper;
         this.weatherService = weatherService;
@@ -61,16 +69,28 @@ public class GeminiService {
             String budget,
             String notes,
             String placeId,
-            LocalDate startDate) {
+            LocalDate startDate,
+            String priceContext
+    ) {
 
         String url = "";
         try {
+            if (destination == null || destination.trim().length() < 2) {
+                throw new IllegalArgumentException("Địa điểm không hợp lệ hoặc quá ngắn");
+            }
+
             // 1. Lấy thông tin địa điểm từ NOMINATIM
             NominatimService.NominatimResult placeDetails = nominatimService.getPlaceDetails(placeId);
-            if (placeDetails == null) throw new IllegalArgumentException("Không tìm thấy địa điểm");
+
+
+            if (placeDetails == null || placeDetails.getLat() == null) {
+                throw new IllegalArgumentException("Không thể xác định vị trí chính xác của '" + destination + "'. Vui lòng chọn từ danh sách gợi ý.");
+            }
 
             double lat = Double.parseDouble(placeDetails.getLat());
             double lng = Double.parseDouble(placeDetails.getLon());
+
+
 
             // 2. Lấy dự báo thời tiết
             List<DailyWeatherDTO> forecast = List.of();
@@ -91,6 +111,7 @@ public class GeminiService {
                     budget,
                     notes,
                     weatherContext,
+                    priceContext,
                     lat,
                     lng
             );
@@ -120,6 +141,7 @@ public class GeminiService {
                             clientResponse -> clientResponse.bodyToMono(String.class)
                                     .map(body -> new RuntimeException("API Key không hợp lệ: " + body))
                     )
+
                     .bodyToMono(GeminiResponse.class)
                     .timeout(Duration.ofMillis(timeout))
                     .block();
@@ -181,63 +203,63 @@ public class GeminiService {
     /**
      * Version đơn giản - không cần placeId
      */
-    public TravelItinerary generateSimpleTravelItinerary(
-            String destination,
-            int days,
-            String budget,
-            String notes,
-            double lat,
-            double lng) {
-
-        try {
-            List<DailyWeatherDTO> forecast = List.of();
-            String weatherContext = "Thời tiết: Vui lòng kiểm tra dự báo trước khi đi.";
-            try {
-                forecast = weatherService.getForecast(lat, lng);
-                if (!forecast.isEmpty()) {
-                    weatherContext = buildWeatherContext(forecast, days);
-                }
-            } catch (Exception e) {
-                log.warn("Bỏ qua weather context: {}", e.getMessage());
-            }
-
-            String prompt = createEnhancedPrompt(
-                    destination, days, budget, notes, weatherContext, lat, lng);
-
-            GeminiRequest.Part part = new GeminiRequest.Part(prompt);
-            GeminiRequest.Content content = new GeminiRequest.Content(List.of(part));
-            GeminiRequest.GenerationConfig config = new GeminiRequest.GenerationConfig(
-                    0.7, 40, 0.95, 8192, "application/json");
-            GeminiRequest request = new GeminiRequest(List.of(content), config);
-
-            String url = String.format("%s/%s:generateContent?key=%s", baseUrl, model, apiKey);
-
-            log.info("=== CALLING GEMINI: {} ({} ngày) ===", destination, days);
-
-            GeminiResponse response = webClient.post()
-                    .uri(url)
-                    .header("Content-Type", "application/json")
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToMono(GeminiResponse.class)
-                    .timeout(Duration.ofMillis(timeout))
-                    .block();
-
-            log.info("✅ Gemini response received");
-
-            TravelItinerary itinerary = parseResponse(response);
-
-            enrichSimpleItinerary(itinerary, forecast, lat, lng, destination);
-            return itinerary;
-
-        } catch (WebClientResponseException e) {
-            log.error("❌ HTTP Error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new RuntimeException("Lỗi HTTP " + e.getStatusCode());
-        } catch (Exception e) {
-            log.error("❌ Error: ", e);
-            throw new RuntimeException("Lỗi khi tạo lịch trình: " + e.getMessage(), e);
-        }
-    }
+//    public TravelItinerary generateSimpleTravelItinerary(
+//            String destination,
+//            int days,
+//            String budget,
+//            String notes,
+//            double lat,
+//            double lng) {
+//
+//        try {
+//            List<DailyWeatherDTO> forecast = List.of();
+//            String weatherContext = "Thời tiết: Vui lòng kiểm tra dự báo trước khi đi.";
+//            try {
+//                forecast = weatherService.getForecast(lat, lng);
+//                if (!forecast.isEmpty()) {
+//                    weatherContext = buildWeatherContext(forecast, days);
+//                }
+//            } catch (Exception e) {
+//                log.warn("Bỏ qua weather context: {}", e.getMessage());
+//            }
+//
+//            String prompt = createEnhancedPrompt(
+//                    destination, days, budget, notes, weatherContext, lat, lng);
+//
+//            GeminiRequest.Part part = new GeminiRequest.Part(prompt);
+//            GeminiRequest.Content content = new GeminiRequest.Content(List.of(part));
+//            GeminiRequest.GenerationConfig config = new GeminiRequest.GenerationConfig(
+//                    0.7, 40, 0.95, 8192, "application/json");
+//            GeminiRequest request = new GeminiRequest(List.of(content), config);
+//
+//            String url = String.format("%s/%s:generateContent?key=%s", baseUrl, model, apiKey);
+//
+//            log.info("=== CALLING GEMINI: {} ({} ngày) ===", destination, days);
+//
+//            GeminiResponse response = webClient.post()
+//                    .uri(url)
+//                    .header("Content-Type", "application/json")
+//                    .bodyValue(request)
+//                    .retrieve()
+//                    .bodyToMono(GeminiResponse.class)
+//                    .timeout(Duration.ofMillis(timeout))
+//                    .block();
+//
+//            log.info("✅ Gemini response received");
+//
+//            TravelItinerary itinerary = parseResponse(response);
+//
+//            enrichSimpleItinerary(itinerary, forecast, lat, lng, destination);
+//            return itinerary;
+//
+//        } catch (WebClientResponseException e) {
+//            log.error("❌ HTTP Error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+//            throw new RuntimeException("Lỗi HTTP " + e.getStatusCode());
+//        } catch (Exception e) {
+//            log.error("❌ Error: ", e);
+//            throw new RuntimeException("Lỗi khi tạo lịch trình: " + e.getMessage(), e);
+//        }
+//    }
 
     private String buildWeatherContext(List<DailyWeatherDTO> forecast, int days) {
         if (forecast == null || forecast.isEmpty()) {
@@ -269,58 +291,70 @@ public class GeminiService {
             String budget,
             String notes,
             String weatherContext,
-            double lat,
-            double lng) {
+            String priceReference,
+            double lat, double lng) {
 
-        return String.format("""
-                        Bạn là chuyên gia lập kế hoạch du lịch chuyên nghiệp.
-                        
-                        THÔNG TIN CHUYẾN ĐI:
-                        - Điểm đến: %s
-                        - Tọa độ: lat=%f, lng=%f
-                        - Số ngày: %d ngày
-                        - Ngân sách: %s
-                        - Ghi chú: %s
-                        
-                        %s
-                        
-                        YÊU CẦU:
-                        1. Dựa vào DỰ BÁO THỜI TIẾT để đề xuất hoạt động phù hợp
-                        2. Nếu có mưa → ưu tiên hoạt động trong nhà (bảo tàng, mua sắm...)
-                        3. Nếu nắng nóng → tránh hoạt động ngoài trời vào 12h-15h
-                        4. Mỗi ngày có 4-6 hoạt động
-                        5. Tọa độ GPS PHẢI chính xác với địa điểm thực tế tại %s
-                        6. Chi phí ước tính hợp lý (VNĐ)
-                        7. QUAN TRỌNG: Mỗi activity BẮT BUỘC phải có "time" theo format HH:mm
-                               Ví dụ: 08:00, 10:30, 13:00, 15:30, 19:00
-                        Trả về JSON theo format:
-                        {
-                          "destination": "%s",
-                          "totalDays": %d,
-                          "itinerary": [
-                            {
-                              "day": 1,
-                              "activities": [
-                                {
-                                  "time": "08:00",
-                                  "activity": "Tên địa điểm CỤ THỂ (VD: Bảo tàng Chăm Đà Nẵng)",
-                                  "lat": 16.0544,
-                                  "lng": 108.2022,
-                                  "estimatedCost": 50000,
-                                  "reason": "Lý do (kể cả yếu tố thời tiết)"
-                                }
-                              ]
-                            }
-                          ]
-                        }
-                        
-                        CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH.
-                        """,
-                destination, lat, lng, days, budget, notes != null ? notes : "Không có",
-                weatherContext,
-                destination,
-                destination, days
-        );
+        return """
+        Bạn là chuyên gia lập kế hoạch du lịch chuyên nghiệp, am hiểu địa lý và giá cả thị trường.
+        
+        THÔNG TIN CHUYẾN ĐI:
+        - Điểm đến: {destination}
+        - Tọa độ trung tâm: lat={lat}, lng={lng}
+        - Số ngày: {days} ngày
+        - Ngân sách dự kiến: {budget}
+        - Ghi chú từ khách hàng: {notes}
+        
+        {weatherContext}
+        
+        DỮ LIỆU GIÁ THỰC TẾ TỪ HỆ THỐNG (ƯU TIÊN SỬ DỤNG):
+        {priceReference}
+        
+        QUY TẮC SỬ DỤNG GIÁ:
+        1. 'meal_': Áp dụng cho các bữa sáng/trưa/tối tùy theo cấp độ (Budget/Mid/Fine).
+        2. 'attraction_avg': Giá vé trung bình cho các điểm tham quan.
+        3. 'transport_day': Chi phí di chuyển trọn gói một ngày.
+        4. Nếu giá trong hệ thống là USD, hãy tự quy đổi sang VNĐ (tỷ giá 25,000) trước khi đưa vào JSON.
+        5. ƯU TIÊN TUYỆT ĐỐI dữ liệu giá từ hệ thống. Nếu không có trong danh sách, hãy ước tính dựa trên thực tế tại {destination}.
+        
+        YÊU CẦU LỊCH TRÌNH:
+        1. Phải dựa vào thời tiết: Nếu mưa -> ưu tiên bảo tàng, quán cafe, trung tâm thương mại. Nếu nắng gắt -> hạn chế di chuyển ngoài trời buổi trưa.
+        2. Mỗi ngày có từ 4-6 hoạt động bao gồm ăn uống và tham quan.
+        3. Tọa độ GPS của từng activity phải là tọa độ thật của địa điểm đó (không dùng tọa độ trung tâm {lat}, {lng} cho mọi hoạt động).
+        4. Định dạng "time" là HH:mm.
+        
+        QUY TẮC CỨNG:
+        - Nếu địa điểm '{destination}' không hợp lệ, trả về: {"error": "INVALID_DESTINATION"}
+        - Chỉ trả về JSON duy nhất, không thêm văn bản giải thích.
+        
+        JSON FORMAT:
+        {
+          "destination": "{destination}",
+          "totalDays": {days},
+          "itinerary": [
+            {
+              "day": 1,
+              "activities": [
+                {
+                  "time": "08:00",
+                  "activity": "Tên địa điểm cụ thể",
+                  "lat": 0.0,
+                  "lng": 0.0,
+                  "estimatedCost": 0,
+                  "reason": "Lý do dựa trên sở thích/thời tiết"
+                }
+              ]
+            }
+          ]
+        }
+        """
+                .replace("{destination}", destination)
+                .replace("{priceReference}", (priceReference != null && !priceReference.isBlank()) ? priceReference : "Không có dữ liệu giá cụ thể, hãy tự ước tính.")
+                .replace("{lat}", String.valueOf(lat))
+                .replace("{lng}", String.valueOf(lng))
+                .replace("{days}", String.valueOf(days))
+                .replace("{budget}", budget)
+                .replace("{notes}", (notes != null && !notes.isBlank()) ? notes : "Không có")
+                .replace("{weatherContext}", weatherContext);
     }
 
     /**
@@ -401,5 +435,38 @@ public class GeminiService {
         log.info("📝 JSON response preview: {}...", jsonText.substring(0, Math.min(200, jsonText.length())));
 
         return objectMapper.readValue(jsonText, TravelItinerary.class);
+    }
+
+    public String buildPriceReferenceContext(List<DestinationCost> dbCosts, List<Activity> dbActivities) {
+        if ((dbCosts == null || dbCosts.isEmpty()) && (dbActivities == null || dbActivities.isEmpty())) {
+            return "Hiện chưa có dữ liệu giá cụ thể trong hệ thống cho vùng này.";
+        }
+
+        StringBuilder sb = new StringBuilder("DANH SÁCH GIÁ THAM KHẢO TỪ HỆ THỐNG:\n");
+
+        // 1. Lấy dữ liệu từ bảng DestinationCost
+        if (dbCosts != null) {
+            for (DestinationCost cost : dbCosts) {
+                // Ưu tiên hiển thị giá Local, nếu null thì dùng USD
+                String priceDisplay = (cost.getCostLocal() != null)
+                        ? cost.getCostLocal() + " " + cost.getLocalCurrency()
+                        : cost.getCostUsd() + " USD";
+
+                sb.append(String.format("- Loại chi phí [%s]: %s\n",
+                        cost.getCategory(), priceDisplay));
+            }
+        }
+
+        // 2. Lấy dữ liệu từ bảng Activity (Giữ nguyên logic cũ của bạn)
+        if (dbActivities != null) {
+            for (Activity act : dbActivities) {
+                if (act.getEstimatedCost() != null) {
+                    sb.append(String.format("- Địa điểm cụ thể [%s]: %s VND\n",
+                            act.getTitle(), act.getEstimatedCost()));
+                }
+            }
+        }
+
+        return sb.toString();
     }
 }

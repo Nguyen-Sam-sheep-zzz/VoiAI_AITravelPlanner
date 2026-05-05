@@ -19,6 +19,8 @@ public class TravelItinerary {
     private DestinationInfo destinationInfo;
     private WeatherSummary weatherSummary;
 
+    private String priceContext;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

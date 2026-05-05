@@ -11,7 +11,10 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ITripRepository extends JpaRepository<Trip, Long> {
-    List<Trip> findByUserIdOrderByCreatedAtDesc(Long userId);
+//    List<Trip> findByUserIdOrderByCreatedAtDesc(Long userId);
+
+    // Cách viết sạch hơn
+    List<Trip> findByUserOrderByCreatedAtDesc(User user);
 
     Optional<Trip> findByShareToken(String shareToken);
 

@@ -14,4 +14,7 @@ public interface IActivityRepository extends JpaRepository<Activity, Long> {
     void updateSortOrder(@Param("id") Long id, @Param("order") Integer order);
 
     List<Activity> findByTripDayIdOrderBySortOrderAsc(Long tripDayId);
+
+    @Query("SELECT a FROM Activity a WHERE a.locationName LIKE %:dest% AND a.estimatedCost IS NOT NULL")
+    List<Activity> findExistingPrices(String dest);
 }

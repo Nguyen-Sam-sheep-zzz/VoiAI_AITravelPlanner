@@ -1,4 +1,4 @@
-package com.codegym.voyai.rest;
+package com.codegym.voyai.model.rest;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

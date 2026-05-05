@@ -1,4 +1,4 @@
-package com.codegym.voyai.rest;
+package com.codegym.voyai.model.rest;
 
 import com.codegym.voyai.config.service.JwtService;
 import com.codegym.voyai.service.UserService;

@@ -33,4 +33,6 @@ public class TripRequest {
 
     @NotNull
     private Double lng;
+
+    private String placeId;
 }

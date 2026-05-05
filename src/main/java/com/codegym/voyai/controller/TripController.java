@@ -2,6 +2,7 @@ package com.codegym.voyai.controller;
 
 import com.codegym.voyai.model.Trip;
 import com.codegym.voyai.model.dto.TripRequest;
+import com.codegym.voyai.repository.ITripRepository;
 import com.codegym.voyai.service.NominatimService;
 import com.codegym.voyai.service.TripService;
 import jakarta.validation.Valid;
@@ -17,9 +18,8 @@ import java.util.Map;
 @RequestMapping("/api/trips")
 @RequiredArgsConstructor
 public class TripController {
-
     private final TripService tripService;
-    private final NominatimService nominatimService;
+    private final ITripRepository tripRepository;
 
     // Tạo trip — AI sinh lịch trình
     @PostMapping
@@ -35,10 +35,15 @@ public class TripController {
         }
     }
 
-    // Lấy danh sách trip của user
+    // Lấy danh sách tất cả trip của user đang đăng nhậpppp
     @GetMapping
     public ResponseEntity<?> getMyTrips(Authentication auth) {
-        return ResponseEntity.ok(tripService.getMyTrips(auth.getName()));
+        try {
+            return ResponseEntity.ok(tripService.getMyTrips(auth.getName()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", e.getMessage()));
+        }
     }
 
     // Lấy 1 trip theo id
@@ -61,9 +66,34 @@ public class TripController {
         return ResponseEntity.ok(Map.of("message", "Đã xóa chuyến đi"));
     }
 
-    // Tìm kiếm địa điểm — gọi Nominatim
-    @GetMapping("/search-place")
-    public ResponseEntity<?> searchPlace(@RequestParam String q) {
-        return ResponseEntity.ok(nominatimService.search(q));
+    // Bật/tắt public sharing
+    @PatchMapping("/{id}/share")
+    public ResponseEntity<?> toggleShare(
+            @PathVariable Long id,
+            @RequestBody Map<String, Boolean> body,
+            Authentication auth) {
+
+        Trip trip = tripRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Trip không tồn tại"));
+
+        if (trip.getUser() == null || !trip.getUser().getEmail().equals(auth.getName())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Bạn không có quyền chia sẻ chuyến đi này"));
+        }
+
+        boolean isPublic = body.getOrDefault("isPublic", false);
+        trip.setIsPublic(isPublic);
+
+        if (isPublic && (trip.getShareToken() == null || trip.getShareToken().isBlank())) {
+            trip.setShareToken(java.util.UUID.randomUUID().toString().replace("-", ""));
+        }
+
+        tripRepository.save(trip);
+
+        return ResponseEntity.ok(Map.of(
+                "isPublic", isPublic,
+                "shareToken", trip.getShareToken(), // Trả về token sẽ linh hoạt hơn cho Frontend
+                "message", isPublic ? "Đã bật chia sẻ công khai" : " đã tắt chia sẻ"
+        ));
     }
 }

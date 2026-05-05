@@ -109,16 +109,25 @@ public class AuthRestController {
             Authentication auth) {
 
         if (sessionId == null || sessionId.isBlank()) {
-            return ResponseEntity.ok(Map.of("claimed", 0));
+            return ResponseEntity.ok(Map.of("claimed", 0, "message", "Không tìm thấy Session ID"));
         }
 
-        int count = tripService.claimGuestTrips(sessionId, auth.getName());
-        return ResponseEntity.ok(Map.of(
-                "claimed", count,
-                "message", count > 0
-                        ? "Đã chuyển " + count + " chuyến đi vào tài khoản"
-                        : "Không có chuyến đi nào để chuyển"
-        ));
-    }
+        if (auth == null || !auth.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Bạn cần đăng nhập để thực hiện thao tác này"));
+        }
 
+        try {
+            int count = tripService.claimGuestTrips(sessionId, auth.getName());
+            return ResponseEntity.ok(Map.of(
+                    "claimed", count,
+                    "message", count > 0
+                            ? "Đã chuyển " + count + " chuyến đi vào tài khoản của bạn"
+                            : "Không có chuyến đi nào được tìm thấy để chuyển"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Có lỗi xảy ra: " + e.getMessage()));
+        }
+    }
 }

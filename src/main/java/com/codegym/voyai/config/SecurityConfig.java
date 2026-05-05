@@ -1,8 +1,8 @@
 package com.codegym.voyai.config;
 
-import com.codegym.voyai.rest.CustomAccessDeniedHandler;
-import com.codegym.voyai.rest.JwtAuthenticationTokenFilter;
-import com.codegym.voyai.rest.RestAuthenticationEntryPoint;
+import com.codegym.voyai.model.rest.CustomAccessDeniedHandler;
+import com.codegym.voyai.model.rest.JwtAuthenticationTokenFilter;
+import com.codegym.voyai.model.rest.RestAuthenticationEntryPoint;
 import com.codegym.voyai.service.UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -54,9 +54,11 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register").permitAll()
+
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/guest/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(daoAuthenticationProvider())

@@ -5,6 +5,7 @@ import com.codegym.voyai.model.dto.TripRequest;
 import com.codegym.voyai.model.dto.travel.TravelItinerary;
 import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
 import com.codegym.voyai.repository.IActivityRepository;
+import com.codegym.voyai.repository.IDestinationCostRepository;
 import com.codegym.voyai.repository.ITripDayRepository;
 import com.codegym.voyai.repository.ITripRepository;
 import jakarta.transaction.Transactional;
@@ -28,6 +29,7 @@ public class TripService {
     private final ITripRepository tripRepository;
     private final ITripDayRepository tripDayRepository;
     private final IActivityRepository activityRepository;
+    private final IDestinationCostRepository destinationCostRepository;
     private final GeminiService geminiService;
     private final UserService userService;
     private final WeatherService weatherService;
@@ -86,51 +88,27 @@ public class TripService {
         // Lưu Trip trước để lấy ID
         Trip savedTrip = tripRepository.save(trip);
 
+        List<DestinationCost> dbCosts = destinationCostRepository.findCostsByDestination(request.getDestination());
+        List<Activity> dbActivities = activityRepository.findExistingPrices(request.getDestination());
+
+        // 3. NHỜ GEMINI SERVICE BUILD CHUỖI TEXT THAM KHẢO
+        String priceContext = geminiService.buildPriceReferenceContext(dbCosts, dbActivities);
+
         // Gọi Gemini lấy lịch trình
-        TravelItinerary itinerary = geminiService.generateSimpleTravelItinerary(
+        TravelItinerary itinerary = geminiService.generateTravelItinerary(
                 request.getDestination(),
                 request.getNumDays(),
                 formatBudget(request.getBudgetTotal(), request.getCurrency()),
                 request.getNotes(),
-                request.getLat(),
-                request.getLng()
+                request.getPlaceId(),
+                savedTrip.getStartDate(),
+                priceContext
         );
 
         // Xử lý Lịch trình (Day & Activities)
         if (itinerary != null && itinerary.getItinerary() != null) {
-            for (TravelItinerary.DayItinerary dayData : itinerary.getItinerary()) {
-                TripDay tripDay = TripDay.builder()
-                        .trip(savedTrip)
-                        .dayNumber(dayData.getDay())
-                        .tripDate(savedTrip.getStartDate().plusDays(dayData.getDay() - 1))
-                        .activities(new LinkedHashSet<>())
-                        .build();
-
-                tripDay = tripDayRepository.save(tripDay);
-                savedTrip.getTripDays().add(tripDay); // Đồng bộ vào bộ nhớ
-
-                if (dayData.getActivities() != null) {
-                    int order = 0;
-                    for (TravelItinerary.ActivityItem actData : dayData.getActivities()) {
-                        Activity activity = Activity.builder()
-                                .tripDay(tripDay)
-                                .sortOrder(order++)
-                                .title(actData.getActivity())
-                                .description(actData.getReason())
-                                .startTime(parseTime(actData.getTime()))
-                                .locationName(actData.getActivity())
-                                .locationLat(actData.getLat() != null ? BigDecimal.valueOf(actData.getLat()) : null)
-                                .locationLng(actData.getLng() != null ? BigDecimal.valueOf(actData.getLng()) : null)
-                                .estimatedCost(actData.getEstimatedCost() != null ? BigDecimal.valueOf(actData.getEstimatedCost()) : null)
-                                .build();
-
-                        activityRepository.save(activity);
-                        tripDay.getActivities().add(activity); // Đồng bộ vào bộ nhớ
-                    }
-                }
-            }
+            processItineraryItems(savedTrip, itinerary);
         }
-
         // Gọi Weather (Optional - giữ nguyên logic cũ của bạn)
         try {
             processWeatherCache(savedTrip, request);
@@ -142,11 +120,46 @@ public class TripService {
         return getTripWithDetails(savedTrip.getId());
     }
 
+    private void processItineraryItems(Trip savedTrip, TravelItinerary itinerary) {
+        for (TravelItinerary.DayItinerary dayData : itinerary.getItinerary()) {
+            TripDay tripDay = TripDay.builder()
+                    .trip(savedTrip)
+                    .dayNumber(dayData.getDay())
+                    .tripDate(savedTrip.getStartDate().plusDays(dayData.getDay() - 1))
+                    .activities(new LinkedHashSet<>())
+                    .build();
+
+            tripDay = tripDayRepository.save(tripDay);
+            savedTrip.getTripDays().add(tripDay);
+
+            if (dayData.getActivities() != null) {
+                int order = 0;
+                for (TravelItinerary.ActivityItem actData : dayData.getActivities()) {
+                    Activity activity = Activity.builder()
+                            .tripDay(tripDay)
+                            .sortOrder(order++)
+                            .title(actData.getActivity())
+                            .description(actData.getReason())
+                            .startTime(parseTime(actData.getTime()))
+                            .locationName(actData.getActivity())
+                            .locationLat(actData.getLat() != null ? BigDecimal.valueOf(actData.getLat()) : null)
+                            .locationLng(actData.getLng() != null ? BigDecimal.valueOf(actData.getLng()) : null)
+                            .estimatedCost(actData.getEstimatedCost() != null ? BigDecimal.valueOf(actData.getEstimatedCost()) : null)
+                            .build();
+
+                    activityRepository.save(activity);
+                    tripDay.getActivities().add(activity);
+                }
+            }
+        }
+    }
+
     // --- CÁC HÀM GET DỮ LIỆU ---
 
     public List<Trip> getMyTrips(String userEmail) {
         User user = userService.findByEmail(userEmail);
-        return user == null ? List.of() : tripRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
+
+        return user == null ? List.of() : tripRepository.findByUserOrderByCreatedAtDesc(user);
     }
 
     public List<Trip> getGuestTrips(String sessionId) {

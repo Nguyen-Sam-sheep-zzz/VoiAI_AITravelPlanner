@@ -45,20 +45,20 @@ public class NominatimService {
     // Lấy chi tiết 1 địa điểm theo place_id
     public NominatimResult getPlaceDetails(String placeId) {
         try {
-            List<NominatimResult> results = webClient.get()
-                    .uri(uri -> uri.path("/search")
+            // Sử dụng endpoint /details thay vì /search hoặc /lookup
+            return webClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/details")
                             .queryParam("place_id", placeId)
                             .queryParam("format", "json")
-                            .queryParam("addressdetails", 1)
                             .build())
+                    .header("User-Agent", "VoyAI-Travel-Planner-Student-Project") // Bắt buộc phải có
                     .retrieve()
-                    .bodyToFlux(NominatimResult.class)
-                    .collectList()
+                    .bodyToMono(NominatimResult.class) // /details trả về 1 Object duy nhất
                     .block();
-
-            return (results != null && !results.isEmpty()) ? results.get(0) : null;
         } catch (Exception e) {
-            log.error("Nominatim getPlaceDetails error: {}", e.getMessage());
+            // In log chi tiết để dễ debug sau này
+            log.error("Nominatim API Error for placeId {}: {}", placeId, e.getMessage());
             return null;
         }
     }
@@ -66,11 +66,10 @@ public class NominatimService {
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class NominatimResult {
-
         @JsonProperty("place_id")
         private Long placeId;
 
-        @JsonProperty("osm_id")
+        @JsonProperty("osm_id") // Thêm dòng này
         private Long osmId;
 
         @JsonProperty("display_name")
@@ -78,13 +77,32 @@ public class NominatimService {
 
         private String lat;
         private String lon;
-        private String type;
-        private String importance;
 
-        // Lấy tên thành phố từ display_name (phần đầu tiên)
-        public String getCityName() {
-            if (displayName == null) return "";
-            return displayName.split(",")[0].trim();
+        @JsonProperty("centroid")
+        private Centroid centroid;
+
+        @Data
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Centroid {
+            private List<Double> coordinates;
+        }
+
+        // Hàm lấy Lat/Lon an toàn như đã hướng dẫn trước đó
+        public String getLat() {
+            if (lat != null) return lat;
+            if (centroid != null && centroid.getCoordinates() != null && centroid.getCoordinates().size() > 1) {
+                return String.valueOf(centroid.getCoordinates().get(1));
+            }
+            return null;
+        }
+
+        public String getLon() {
+            if (lon != null) return lon;
+            if (centroid != null && centroid.getCoordinates() != null && centroid.getCoordinates().size() > 0) {
+                return String.valueOf(centroid.getCoordinates().get(0));
+            }
+            return null;
         }
     }
+
 }
