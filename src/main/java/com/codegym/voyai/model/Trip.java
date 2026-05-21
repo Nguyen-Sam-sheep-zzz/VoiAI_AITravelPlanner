@@ -38,6 +38,15 @@ public class Trip {
     @Column(name = "dest_lng", precision = 10, scale = 6)
     private BigDecimal destLng;
 
+    @Column(name = "origin_name", length = 300)
+    private String originName;
+
+    @Column(name = "origin_lat", precision = 10, scale = 6)
+    private BigDecimal originLat;
+
+    @Column(name = "origin_lng", precision = 10, scale = 6)
+    private BigDecimal originLng;
+
     @Column(name = "start_date")
     private LocalDate startDate;
 

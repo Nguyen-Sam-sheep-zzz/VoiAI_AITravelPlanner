@@ -64,6 +64,7 @@ public class GeminiService {
      * Tạo lịch trình với Nominatim (FREE)
      */
     public TravelItinerary generateTravelItinerary(
+            String originName,
             String destination,
             int days,
             String budget,
@@ -106,6 +107,7 @@ public class GeminiService {
 
             // 3. Tạo prompt với context đầy đủ
             String prompt = createEnhancedPrompt(
+                    originName,
                     destination,
                     days,
                     budget,
@@ -286,6 +288,7 @@ public class GeminiService {
     }
 
     private String createEnhancedPrompt(
+            String originName,
             String destination,
             int days,
             String budget,
@@ -298,6 +301,7 @@ public class GeminiService {
         Bạn là chuyên gia lập kế hoạch du lịch chuyên nghiệp, am hiểu địa lý và giá cả thị trường.
         
         THÔNG TIN CHUYẾN ĐI:
+        - Điểm xuất phát: {originName}
         - Điểm đến: {destination}
         - Tọa độ trung tâm: lat={lat}, lng={lng}
         - Số ngày: {days} ngày
@@ -318,12 +322,13 @@ public class GeminiService {
         
         YÊU CẦU LỊCH TRÌNH:
         1. Phải dựa vào thời tiết: Nếu mưa -> ưu tiên bảo tàng, quán cafe, trung tâm thương mại. Nếu nắng gắt -> hạn chế di chuyển ngoài trời buổi trưa.
-        2. Mỗi ngày có từ 4-6 hoạt động bao gồm ăn uống và tham quan.
-        3. Tọa độ GPS của từng activity phải là tọa độ thật của địa điểm đó (không dùng tọa độ trung tâm {lat}, {lng} cho mọi hoạt động).
+        2. Mỗi ngày có từ 4-6 hoạt động bao gồm ăn uống và tham quan. Nếu có Điểm xuất phát, hãy đề xuất hợp lý thời gian di chuyển (bay/xe) ở ngày đầu và ngày cuối.
+        3. Tọa độ GPS có thể dùng tọa độ thật của địa danh. Nếu không rõ vị trí chính xác, hãy để lat = 0.0 và lng = 0.0 thay vì báo lỗi.
         4. Định dạng "time" là HH:mm.
+        5. Nếu không có đủ thông tin chi tiết, hãy tạo lịch trình cơ bản dựa trên các điểm tham quan nổi tiếng nhất tại khu vực.
         
         QUY TẮC CỨNG:
-        - Nếu địa điểm '{destination}' không hợp lệ, trả về: {"error": "INVALID_DESTINATION"}
+        - Bắt buộc trả về một lịch trình (itinerary) hợp lệ cho dù địa điểm có ít phổ biến.
         - Chỉ trả về JSON duy nhất, không thêm văn bản giải thích.
         
         JSON FORMAT:
@@ -347,6 +352,7 @@ public class GeminiService {
           ]
         }
         """
+                .replace("{originName}", (originName != null && !originName.isBlank()) ? originName : "Không cung cấp (Tự do sắp xếp)")
                 .replace("{destination}", destination)
                 .replace("{priceReference}", (priceReference != null && !priceReference.isBlank()) ? priceReference : "Không có dữ liệu giá cụ thể, hãy tự ước tính.")
                 .replace("{lat}", String.valueOf(lat))
@@ -392,6 +398,10 @@ public class GeminiService {
         }
 
         // Thêm thông tin cho từng ngày
+        if (itinerary.getItinerary() == null || itinerary.getItinerary().isEmpty()) {
+            throw new RuntimeException("AI không thể tạo lịch trình chi tiết (Dữ liệu trả về bị trống). Hãy thử lại với các yêu cầu khác.");
+        }
+
         for (int i = 0; i < itinerary.getItinerary().size(); i++) {
             TravelItinerary.DayItinerary dayDto = itinerary.getItinerary().get(i);
             LocalDate dayDate = startDate.plusDays(i);
@@ -437,34 +447,20 @@ public class GeminiService {
         return objectMapper.readValue(jsonText, TravelItinerary.class);
     }
 
-    public String buildPriceReferenceContext(List<DestinationCost> dbCosts, List<Activity> dbActivities) {
-        if ((dbCosts == null || dbCosts.isEmpty()) && (dbActivities == null || dbActivities.isEmpty())) {
+    public String buildPriceReferenceContext(List<DestinationCost> dbCosts) {
+        if (dbCosts == null || dbCosts.isEmpty()) {
             return "Hiện chưa có dữ liệu giá cụ thể trong hệ thống cho vùng này.";
         }
 
         StringBuilder sb = new StringBuilder("DANH SÁCH GIÁ THAM KHẢO TỪ HỆ THỐNG:\n");
 
-        // 1. Lấy dữ liệu từ bảng DestinationCost
-        if (dbCosts != null) {
-            for (DestinationCost cost : dbCosts) {
-                // Ưu tiên hiển thị giá Local, nếu null thì dùng USD
-                String priceDisplay = (cost.getCostLocal() != null)
-                        ? cost.getCostLocal() + " " + cost.getLocalCurrency()
-                        : cost.getCostUsd() + " USD";
+        for (DestinationCost cost : dbCosts) {
+            String priceDisplay = (cost.getCostLocal() != null)
+                    ? cost.getCostLocal() + " " + cost.getLocalCurrency()
+                    : cost.getCostUsd() + " USD";
 
-                sb.append(String.format("- Loại chi phí [%s]: %s\n",
-                        cost.getCategory(), priceDisplay));
-            }
-        }
-
-        // 2. Lấy dữ liệu từ bảng Activity (Giữ nguyên logic cũ của bạn)
-        if (dbActivities != null) {
-            for (Activity act : dbActivities) {
-                if (act.getEstimatedCost() != null) {
-                    sb.append(String.format("- Địa điểm cụ thể [%s]: %s VND\n",
-                            act.getTitle(), act.getEstimatedCost()));
-                }
-            }
+            sb.append(String.format("- Loại chi phí [%s]: %s\n",
+                    cost.getCategory(), priceDisplay));
         }
 
         return sb.toString();

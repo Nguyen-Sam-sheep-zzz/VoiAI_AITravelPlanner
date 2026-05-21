@@ -22,6 +22,9 @@ public class UserService implements UserDetailsService {
     private IUserRepository iUserRepository;
 
     @Autowired
+    private com.codegym.voyai.repository.IRoleRepository roleRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     public List<UserDTO> findAll() {
@@ -50,9 +53,48 @@ public class UserService implements UserDetailsService {
         return true;
     }
 
+    public User processOAuthPostLogin(String email, String name, String avatarUrl) {
+        Optional<User> existUser = iUserRepository.findByEmail(email);
+
+        if (existUser.isPresent()) {
+            return existUser.get();
+        }
+
+        // Tạo user mới nếu chưa tồn tại
+        com.codegym.voyai.model.Role userRole = roleRepository.findByName("ROLE_USER")
+                .orElseThrow(() -> new RuntimeException("Role ROLE_USER chưa có trong DB"));
+
+        User newUser = User.builder()
+                .email(email)
+                .fullName(name)
+                .avatarUrl(avatarUrl)
+                .provider("google")
+                .passwordHash(passwordEncoder.encode(java.util.UUID.randomUUID().toString())) // Mật khẩu ngẫu nhiên
+                .roles(java.util.Set.of(userRole))
+                .isActive(true)
+                .build();
+
+        return iUserRepository.save(newUser);
+    }
+
 
     public void delete(Long id) {
         iUserRepository.deleteById(id);
+    }
+
+    public User updateProfile(Long id, String fullName, String avatarUrl) {
+        java.util.Optional<User> userOpt = iUserRepository.findById(id);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            if (fullName != null && !fullName.isBlank()) {
+                user.setFullName(fullName);
+            }
+            if (avatarUrl != null) {
+                user.setAvatarUrl(avatarUrl);
+            }
+            return iUserRepository.save(user);
+        }
+        return null;
     }
 
     @Override

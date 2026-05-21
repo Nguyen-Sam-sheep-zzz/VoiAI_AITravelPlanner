@@ -20,6 +20,14 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
+import org.springframework.beans.factory.annotation.Value;
+import com.codegym.voyai.model.dto.GoogleAuthRequest;
+
+import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
@@ -33,6 +41,9 @@ public class AuthRestController {
     private final JwtService jwtService;
     private final IRoleRepository roleRepository;
     private final TripService tripService;
+
+    @Value("${google.client.id:}")
+    private String googleClientId;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
@@ -82,12 +93,56 @@ public class AuthRestController {
                     .userId(principal.getUser().getId())
                     .email(principal.getUsername())
                     .fullName(principal.getUser().getFullName())
+                    .avatarUrl(principal.getUser().getAvatarUrl())
                     .build());
 
         } catch (BadCredentialsException e) {
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Email hoặc mật khẩu không đúng"));
+        }
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<?> googleLogin(@Valid @RequestBody GoogleAuthRequest request) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(request.getToken());
+            if (idToken != null) {
+                GoogleIdToken.Payload payload = idToken.getPayload();
+
+                String email = payload.getEmail();
+                String name = (String) payload.get("name");
+                String pictureUrl = (String) payload.get("picture");
+
+                // Tìm hoặc tạo mới user
+                User user = userService.processOAuthPostLogin(email, name, pictureUrl);
+
+                // Tạo Authentication context cho JWT
+                UserPrinciple userPrinciple = UserPrinciple.build(user);
+                Authentication authentication = new UsernamePasswordAuthenticationToken(
+                        userPrinciple, null, userPrinciple.getAuthorities());
+
+                String jwt = jwtService.generateToken(authentication);
+
+                return ResponseEntity.ok(AuthResponse.builder()
+                        .accessToken(jwt)
+                        .tokenType("Bearer")
+                        .userId(user.getId())
+                        .email(user.getEmail())
+                        .fullName(user.getFullName())
+                        .avatarUrl(user.getAvatarUrl())
+                        .build());
+            } else {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Token Google không hợp lệ"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Lỗi xác thực Google: " + e.getMessage()));
         }
     }
 
@@ -98,8 +153,41 @@ public class AuthRestController {
         return ResponseEntity.ok(Map.of(
                 "userId", principal.getUser().getId(),
                 "email", principal.getUsername(),
-                "fullName", principal.getUser().getFullName()
+                "fullName", principal.getUser().getFullName(),
+                "avatarUrl", principal.getUser().getAvatarUrl() != null ? principal.getUser().getAvatarUrl() : ""
         ));
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> request, Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Bạn cần đăng nhập để thực hiện thao tác này"));
+        }
+        try {
+            UserPrinciple principal = (UserPrinciple) authentication.getPrincipal();
+            String fullName = request.get("fullName");
+            String avatarUrl = request.get("avatarUrl");
+            
+            User updatedUser = userService.updateProfile(principal.getUser().getId(), fullName, avatarUrl);
+            if (updatedUser != null) {
+                principal.getUser().setFullName(updatedUser.getFullName());
+                principal.getUser().setAvatarUrl(updatedUser.getAvatarUrl());
+                
+                return ResponseEntity.ok(Map.of(
+                        "userId", updatedUser.getId(),
+                        "email", updatedUser.getEmail(),
+                        "fullName", updatedUser.getFullName(),
+                        "avatarUrl", updatedUser.getAvatarUrl() != null ? updatedUser.getAvatarUrl() : ""
+                ));
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "Không tìm thấy người dùng"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Có lỗi xảy ra: " + e.getMessage()));
+        }
     }
 
     // Gọi sau khi login thành công — chuyển guest trips → user

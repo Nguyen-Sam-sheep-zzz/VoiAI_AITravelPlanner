@@ -18,4 +18,9 @@ public class PlaceController {
     public ResponseEntity<?> searchPlace(@RequestParam String q) {
         return ResponseEntity.ok(nominatimService.search(q));
     }
+
+    @GetMapping("/reverse")
+    public ResponseEntity<?> reversePlace(@RequestParam double lat, @RequestParam double lon) {
+        return ResponseEntity.ok(nominatimService.reverse(lat, lon));
+    }
 }

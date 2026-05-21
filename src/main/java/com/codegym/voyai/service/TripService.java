@@ -78,6 +78,9 @@ public class TripService {
                 .budgetTotal(request.getBudgetTotal())
                 .currency(request.getCurrency())
                 .notes(request.getNotes())
+                .originName(request.getOriginName())
+                .originLat(request.getOriginLat() != null ? BigDecimal.valueOf(request.getOriginLat()) : null)
+                .originLng(request.getOriginLng() != null ? BigDecimal.valueOf(request.getOriginLng()) : null)
                 .tripDays(new LinkedHashSet<>()) // Khởi tạo Set để tránh null
                 .weatherCaches(new ArrayList<>())
                 .build();
@@ -89,13 +92,13 @@ public class TripService {
         Trip savedTrip = tripRepository.save(trip);
 
         List<DestinationCost> dbCosts = destinationCostRepository.findCostsByDestination(request.getDestination());
-        List<Activity> dbActivities = activityRepository.findExistingPrices(request.getDestination());
 
         // 3. NHỜ GEMINI SERVICE BUILD CHUỖI TEXT THAM KHẢO
-        String priceContext = geminiService.buildPriceReferenceContext(dbCosts, dbActivities);
+        String priceContext = geminiService.buildPriceReferenceContext(dbCosts);
 
         // Gọi Gemini lấy lịch trình
         TravelItinerary itinerary = geminiService.generateTravelItinerary(
+                request.getOriginName(),
                 request.getDestination(),
                 request.getNumDays(),
                 formatBudget(request.getBudgetTotal(), request.getCurrency()),

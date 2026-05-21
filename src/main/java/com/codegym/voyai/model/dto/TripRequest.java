@@ -35,4 +35,9 @@ public class TripRequest {
     private Double lng;
 
     private String placeId;
+
+    // Các trường tùy chọn cho Điểm xuất phát
+    private String originName;
+    private Double originLat;
+    private Double originLng;
 }

@@ -42,6 +42,24 @@ public class NominatimService {
         }
     }
 
+    // Lấy địa chỉ từ tọa độ
+    public NominatimResult reverse(double lat, double lon) {
+        try {
+            return webClient.get()
+                    .uri(uri -> uri.path("/reverse")
+                            .queryParam("lat", lat)
+                            .queryParam("lon", lon)
+                            .queryParam("format", "json")
+                            .build())
+                    .retrieve()
+                    .bodyToMono(NominatimResult.class)
+                    .block();
+        } catch (Exception e) {
+            log.error("Nominatim reverse error: {}", e.getMessage());
+            return null;
+        }
+    }
+
     // Lấy chi tiết 1 địa điểm theo place_id
     public NominatimResult getPlaceDetails(String placeId) {
         try {
