@@ -57,7 +57,7 @@ public class ActivityController {
         return ResponseEntity.ok(activityRepository.save(activity));
     }
 
-    // Kéo thả — cập nhật sortOrder hàng loạt
+    // Kéo thả — cập nhật sortOrder và startTime hàng loạt
     @PutMapping("/reorder")
     @Transactional
     public ResponseEntity<?> reorder(
@@ -66,22 +66,36 @@ public class ActivityController {
 
         List<Activity> activitiesToUpdate = new ArrayList<>();
 
-        for (int i = 0; i < request.getActivityIds().size(); i++) {
-            Long actId = request.getActivityIds().get(i);
-            Activity activity = activityRepository.findById(actId).orElse(null);
+        if (request.getActivities() != null) {
+            for (int i = 0; i < request.getActivities().size(); i++) {
+                ReorderRequest.ActivityOrderUpdate update = request.getActivities().get(i);
+                if (update.getId() == null) continue;
 
-            if (activity != null) {
-                // Kiểm tra quyền (Nếu muốn hỗ trợ Guest, hãy check sessionId ở đây)
-                Trip trip = activity.getTripDay().getTrip();
-                if (trip.getUser() != null && trip.getUser().getEmail().equals(auth.getName())) {
-                    activity.setSortOrder(i);
-                    activitiesToUpdate.add(activity);
+                Activity activity = activityRepository.findById(update.getId()).orElse(null);
+
+                if (activity != null) {
+                    Trip trip = activity.getTripDay().getTrip();
+                    if (trip.getUser() != null && trip.getUser().getEmail().equals(auth.getName())) {
+                        activity.setSortOrder(i);
+                        if (update.getStartTime() != null && !update.getStartTime().isBlank()) {
+                            String timeStr = update.getStartTime();
+                            if (timeStr.length() == 5) {
+                                timeStr += ":00";
+                            }
+                            try {
+                                activity.setStartTime(LocalTime.parse(timeStr));
+                            } catch (Exception e) {
+                                // Bỏ qua nếu thời gian lỗi định dạng
+                            }
+                        }
+                        activitiesToUpdate.add(activity);
+                    }
                 }
             }
         }
 
         activityRepository.saveAll(activitiesToUpdate); // Lưu hàng loạt 1 lần
-        return ResponseEntity.ok(Map.of("message", "Đã cập nhật thứ tự"));
+        return ResponseEntity.ok(Map.of("message", "Đã cập nhật thứ tự và thời gian"));
     }
 
     // Xóa 1 activity

@@ -34,16 +34,18 @@ public class GuestActivityController {
                     .body(Map.of("message", "Thieu Session ID"));
         }
 
-        if (request.getActivityIds() == null || request.getActivityIds().isEmpty()) {
+        if (request.getActivities() == null || request.getActivities().isEmpty()) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Danh sach activityIds khong duoc rong"));
+                    .body(Map.of("message", "Danh sach activities khong duoc rong"));
         }
 
         List<Activity> activitiesToUpdate = new ArrayList<>();
 
-        for (int i = 0; i < request.getActivityIds().size(); i++) {
-            Long actId = request.getActivityIds().get(i);
-            Activity activity = activityRepository.findById(actId).orElse(null);
+        for (int i = 0; i < request.getActivities().size(); i++) {
+            ReorderRequest.ActivityOrderUpdate update = request.getActivities().get(i);
+            if (update.getId() == null) continue;
+
+            Activity activity = activityRepository.findById(update.getId()).orElse(null);
 
             if (activity == null) continue;
 
@@ -51,6 +53,17 @@ public class GuestActivityController {
             Trip trip = activity.getTripDay().getTrip();
             if (sessionId.equals(trip.getSessionId())) {
                 activity.setSortOrder(i);
+                if (update.getStartTime() != null && !update.getStartTime().isBlank()) {
+                    String timeStr = update.getStartTime();
+                    if (timeStr.length() == 5) {
+                        timeStr += ":00";
+                    }
+                    try {
+                        activity.setStartTime(java.time.LocalTime.parse(timeStr));
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
                 activitiesToUpdate.add(activity);
             } else {
                 log.warn("Guest reorder denied: sessionId={} khong khop voi trip.sessionId={}",
@@ -67,7 +80,7 @@ public class GuestActivityController {
         log.info("Guest reorder: {} activities updated for session {}", activitiesToUpdate.size(), sessionId);
 
         return ResponseEntity.ok(Map.of(
-                "message", "Da cap nhat thu tu",
+                "message", "Da cap nhat thu tu va thoi gian",
                 "updated", activitiesToUpdate.size()
         ));
     }

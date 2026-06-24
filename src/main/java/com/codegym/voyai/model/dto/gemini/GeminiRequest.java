@@ -38,7 +38,7 @@ public class GeminiRequest {
         private Double topP;
         private Integer maxOutputTokens;
 
-        @JsonProperty("response_mime_type")
+        @JsonProperty("responseMimeType")
         private String responseMimeType;
     }
 }

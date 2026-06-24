@@ -57,7 +57,23 @@ public class UserService implements UserDetailsService {
         Optional<User> existUser = iUserRepository.findByEmail(email);
 
         if (existUser.isPresent()) {
-            return existUser.get();
+            User user = existUser.get();
+            // Cập nhật avatar từ Google nếu user chưa có avatar hoặc avatar đã thay đổi
+            boolean needUpdate = false;
+            if (avatarUrl != null && !avatarUrl.isBlank()) {
+                if (user.getAvatarUrl() == null || user.getAvatarUrl().isBlank() || !user.getAvatarUrl().equals(avatarUrl)) {
+                    user.setAvatarUrl(avatarUrl);
+                    needUpdate = true;
+                }
+            }
+            if (name != null && !name.isBlank() && (user.getFullName() == null || user.getFullName().isBlank())) {
+                user.setFullName(name);
+                needUpdate = true;
+            }
+            if (needUpdate) {
+                return iUserRepository.save(user);
+            }
+            return user;
         }
 
         // Tạo user mới nếu chưa tồn tại

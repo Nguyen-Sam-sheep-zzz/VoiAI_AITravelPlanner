@@ -5,7 +5,6 @@ import org.springframework.security.core.GrantedAuthority;
 import java.util.Collection;
 
 public class JwtResponse {
-
     private Long id;
     private String token;
     private String type = "Bearer";

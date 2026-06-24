@@ -93,7 +93,6 @@ public class TripController {
         return ResponseEntity.ok(Map.of(
                 "isPublic", isPublic,
                 "shareToken", trip.getShareToken(), // Trả về token sẽ linh hoạt hơn cho Frontend
-                "message", isPublic ? "Đã bật chia sẻ công khai" : " đã tắt chia sẻ"
-        ));
+                "message", isPublic ? "Đã bật chia sẻ công khai" : " đã tắt chia sẻ"));
     }
 }

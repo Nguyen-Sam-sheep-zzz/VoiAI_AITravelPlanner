@@ -6,5 +6,11 @@ import java.util.List;
 
 @Data
 public class ReorderRequest {
-    private List<Long> activityIds; // thứ tự mới từ frontend
+    private List<ActivityOrderUpdate> activities;
+
+    @Data
+    public static class ActivityOrderUpdate {
+        private Long id;
+        private String startTime;
+    }
 }
