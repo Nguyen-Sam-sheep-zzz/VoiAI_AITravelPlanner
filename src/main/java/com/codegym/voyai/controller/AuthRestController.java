@@ -1,0 +1,221 @@
+package com.codegym.voyai.controller;
+
+import com.codegym.voyai.config.service.JwtService;
+import com.codegym.voyai.model.Role;
+import com.codegym.voyai.model.User;
+import com.codegym.voyai.model.UserPrinciple;
+import com.codegym.voyai.model.dto.AuthResponse;
+import com.codegym.voyai.model.dto.LoginRequest;
+import com.codegym.voyai.model.dto.RegisterRequest;
+import com.codegym.voyai.repository.IRoleRepository;
+import com.codegym.voyai.service.TripService;
+import com.codegym.voyai.service.UserService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
+import org.springframework.beans.factory.annotation.Value;
+import com.codegym.voyai.model.dto.GoogleAuthRequest;
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+
+@RestController
+@RequestMapping("/api/auth")
+@RequiredArgsConstructor
+public class AuthRestController {
+
+    private final AuthenticationManager authenticationManager;
+    private final UserService userService;
+    private final JwtService jwtService;
+    private final IRoleRepository roleRepository;
+    private final TripService tripService;
+
+    @Value("${google.client.id:}")
+    private String googleClientId;
+
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+        // Kiểm tra email đã tồn tại chưa
+        if (userService.existsByEmail(request.getEmail())) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", "Email đã được sử dụng"));
+        }
+
+        // Lấy role mặc định ROLE_USER
+        Role userRole = roleRepository.findByName("ROLE_USER")
+                .orElseThrow(() -> new RuntimeException("Role ROLE_USER chưa có trong DB, cần seed data"));
+
+        User newUser = User.builder()
+                .email(request.getEmail())
+                .passwordHash(request.getPassword()) // UserService.add() sẽ tự encode
+                .fullName(request.getFullName())
+                .roles(Set.of(userRole))
+                .build();
+
+        userService.add(newUser);
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(Map.of("message", "Đăng ký thành công, vui lòng đăng nhập"));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        try {
+            // Spring Security tự gọi loadUserByUsername(email) → so khớp password
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            request.getEmail(),
+                            request.getPassword()
+                    )
+            );
+
+            // Sinh JWT
+            String token = jwtService.generateToken(authentication);
+            UserPrinciple principal = (UserPrinciple) authentication.getPrincipal();
+
+            return ResponseEntity.ok(AuthResponse.builder()
+                    .accessToken(token)
+                    .tokenType("Bearer")
+                    .userId(principal.getUser().getId())
+                    .email(principal.getUsername())
+                    .fullName(principal.getUser().getFullName())
+                    .avatarUrl(principal.getUser().getAvatarUrl())
+                    .build());
+
+        } catch (BadCredentialsException e) {
+            return ResponseEntity
+                    .status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Email hoặc mật khẩu không đúng"));
+        }
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<?> googleLogin(@Valid @RequestBody GoogleAuthRequest request) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            GoogleIdToken idToken = verifier.verify(request.getToken());
+            if (idToken != null) {
+                GoogleIdToken.Payload payload = idToken.getPayload();
+
+                String email = payload.getEmail();
+                String name = (String) payload.get("name");
+                String pictureUrl = (String) payload.get("picture");
+
+                // Tìm hoặc tạo mới user
+                User user = userService.processOAuthPostLogin(email, name, pictureUrl);
+
+                // Tạo Authentication context cho JWT
+                UserPrinciple userPrinciple = UserPrinciple.build(user);
+                Authentication authentication = new UsernamePasswordAuthenticationToken(
+                        userPrinciple, null, userPrinciple.getAuthorities());
+
+                String jwt = jwtService.generateToken(authentication);
+
+                return ResponseEntity.ok(AuthResponse.builder()
+                        .accessToken(jwt)
+                        .tokenType("Bearer")
+                        .userId(user.getId())
+                        .email(user.getEmail())
+                        .fullName(user.getFullName())
+                        .avatarUrl(user.getAvatarUrl())
+                        .build());
+            } else {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Token Google không hợp lệ"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Lỗi xác thực Google: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(Authentication authentication) {
+        // Endpoint này đã được bảo vệ bởi JWT filter
+        UserPrinciple principal = (UserPrinciple) authentication.getPrincipal();
+        return ResponseEntity.ok(Map.of(
+                "userId", principal.getUser().getId(),
+                "email", principal.getUsername(),
+                "fullName", principal.getUser().getFullName(),
+                "avatarUrl", principal.getUser().getAvatarUrl() != null ? principal.getUser().getAvatarUrl() : ""
+        ));
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> request, Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Bạn cần đăng nhập để thực hiện thao tác này"));
+        }
+        try {
+            UserPrinciple principal = (UserPrinciple) authentication.getPrincipal();
+            String fullName = request.get("fullName");
+            String avatarUrl = request.get("avatarUrl");
+            
+            User updatedUser = userService.updateProfile(principal.getUser().getId(), fullName, avatarUrl);
+            if (updatedUser != null) {
+                principal.getUser().setFullName(updatedUser.getFullName());
+                principal.getUser().setAvatarUrl(updatedUser.getAvatarUrl());
+                
+                return ResponseEntity.ok(Map.of(
+                        "userId", updatedUser.getId(),
+                        "email", updatedUser.getEmail(),
+                        "fullName", updatedUser.getFullName(),
+                        "avatarUrl", updatedUser.getAvatarUrl() != null ? updatedUser.getAvatarUrl() : ""
+                ));
+            } else {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("message", "Không tìm thấy người dùng"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Có lỗi xảy ra: " + e.getMessage()));
+        }
+    }
+
+    // Gọi sau khi login thành công — chuyển guest trips → user
+    @PostMapping("/claim-trips")
+    public ResponseEntity<?> claimTrips(
+            @RequestHeader(value = "X-Session-Id", required = false) String sessionId,
+            Authentication auth) {
+
+        if (sessionId == null || sessionId.isBlank()) {
+            return ResponseEntity.ok(Map.of("claimed", 0, "message", "Không tìm thấy Session ID"));
+        }
+
+        if (auth == null || !auth.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Bạn cần đăng nhập để thực hiện thao tác này"));
+        }
+
+        try {
+            int count = tripService.claimGuestTrips(sessionId, auth.getName());
+            return ResponseEntity.ok(Map.of(
+                    "claimed", count,
+                    "message", count > 0
+                            ? "Đã chuyển " + count + " chuyến đi vào tài khoản của bạn"
+                            : "Không có chuyến đi nào được tìm thấy để chuyển"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Có lỗi xảy ra: " + e.getMessage()));
+        }
+    }
+}
