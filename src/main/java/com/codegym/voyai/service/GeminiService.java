@@ -1,11 +1,10 @@
 package com.codegym.voyai.service;
 
-import com.codegym.voyai.model.Activity;
-import com.codegym.voyai.model.DestinationCost;
-import com.codegym.voyai.model.dto.gemini.GeminiRequest;
-import com.codegym.voyai.model.dto.gemini.GeminiResponse;
-import com.codegym.voyai.model.dto.travel.TravelItinerary;
-import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
+import com.codegym.voyai.entity.DestinationCost;
+import com.codegym.voyai.dto.external.gemini.GeminiRequest;
+import com.codegym.voyai.dto.external.gemini.GeminiResponse;
+import com.codegym.voyai.dto.external.travel.TravelItinerary;
+import com.codegym.voyai.dto.external.weather.DailyWeatherDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,9 +44,9 @@ public class GeminiService {
 
     // CONSTRUCTOR MỚI
     public GeminiService(WebClient.Builder webClientBuilder,
-            ObjectMapper objectMapper,
-            WeatherService weatherService,
-            NominatimService nominatimService) { // Thay GoogleMapsService
+                         ObjectMapper objectMapper,
+                         WeatherService weatherService,
+                         NominatimService nominatimService) { // Thay GoogleMapsService
         this.webClient = webClientBuilder
                 .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
                 .clientConnector(new ReactorClientHttpConnector(
@@ -258,7 +257,6 @@ public class GeminiService {
     // throw new RuntimeException("Lỗi khi tạo lịch trình: " + e.getMessage(), e);
     // }
     // }
-
     private String buildWeatherContext(List<DailyWeatherDTO> forecast, int days) {
         if (forecast == null || forecast.isEmpty()) {
             return "Thời tiết: Không lấy được dự báo, hãy lên kế hoạch linh hoạt.";
@@ -294,7 +292,7 @@ public class GeminiService {
 
         return """
                 Bạn là chuyên gia lập kế hoạch du lịch chuyên nghiệp, am hiểu địa lý và giá cả thị trường.
-
+                
                 THÔNG TIN CHUYẾN ĐI:
                 - Điểm xuất phát: {originName}
                 - Điểm đến: {destination}
@@ -302,19 +300,19 @@ public class GeminiService {
                 - Số ngày: {days} ngày
                 - Ngân sách dự kiến: {budget}
                 - Ghi chú từ khách hàng: {notes}
-
+                
                 {weatherContext}
-
+                
                 DỮ LIỆU GIÁ THỰC TẾ TỪ HỆ THỐNG (ƯU TIÊN SỬ DỤNG):
                 {priceReference}
-
+                
                 QUY TẮC SỬ DỤNG GIÁ:
                 1. 'meal_': Áp dụng cho các bữa sáng/trưa/tối tùy theo cấp độ (Budget/Mid/Fine).
                 2. 'attraction_avg': Giá vé trung bình cho các điểm tham quan.
                 3. 'transport_day': Chi phí di chuyển trọn gói một ngày.
                 4. Nếu giá trong hệ thống là USD, hãy tự quy đổi sang VNĐ (tỷ giá 25,000) trước khi đưa vào JSON.
                 5. ƯU TIÊN TUYỆT ĐỐI dữ liệu giá từ hệ thống. Nếu không có trong danh sách, hãy ước tính dựa trên thực tế tại {destination}.
-
+                
                 YÊU CẦU LỊCH TRÌNH:
                 1. Phải dựa vào thời tiết: Nếu mưa -> ưu tiên bảo tàng, quán cafe, trung tâm thương mại. Nếu nắng gắt -> hạn chế di chuyển ngoài trời buổi trưa.
                 2. Mỗi ngày có từ 4-6 hoạt động bao gồm ăn uống và tham quan. Nếu có Điểm xuất phát, hãy đề xuất hợp lý thời gian di chuyển (bay/xe) ở ngày đầu và ngày cuối.
@@ -324,12 +322,12 @@ public class GeminiService {
                 6. GIỚI HẠN ĐỘ DÀI VĂN BẢN (Bắt buộc để tránh lỗi tràn token):
                    - "activity" (Tên hoạt động): tối đa 10 từ (dưới 80 ký tự).
                    - "reason" (Lý do): viết đúng 1 câu ngắn gọn duy nhất, tối đa 15 từ (dưới 100 ký tự). Ví dụ: "Thích hợp ngắm hoàng hôn, check-in chụp ảnh." hoặc "Thưởng thức ẩm thực địa phương đặc sắc."
-
+                
                 QUY TẮC CỨNG:
                 - Bắt buộc trả về một lịch trình (itinerary) hợp lệ cho dù địa điểm có ít phổ biến.
                 - Chỉ trả về JSON duy nhất, không thêm văn bản giải thích.
                 - Giữ cho toàn bộ JSON gọn gàng, tránh mô tả lan man dài dòng.
-
+                
                 JSON FORMAT:
                 {
                   "destination": "{destination}",
@@ -422,7 +420,7 @@ public class GeminiService {
                             dw.setCondition(w.getCondition());
                             dw.setIcon(w.getIcon());
                             dw.setRainChance(w.getIsRainy() ? 100.0 : 0.0); // Open-Meteo daily ko có % mưa chính xác ở
-                                                                            // code của bạn
+                            // code của bạn
                             dayDto.setWeather(dw);
                         });
             }

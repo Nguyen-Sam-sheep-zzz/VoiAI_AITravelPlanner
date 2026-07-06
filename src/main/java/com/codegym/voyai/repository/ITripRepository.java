@@ -1,7 +1,7 @@
 package com.codegym.voyai.repository;
 
-import com.codegym.voyai.model.Trip;
-import com.codegym.voyai.model.User;
+import com.codegym.voyai.entity.Trip;
+import com.codegym.voyai.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;

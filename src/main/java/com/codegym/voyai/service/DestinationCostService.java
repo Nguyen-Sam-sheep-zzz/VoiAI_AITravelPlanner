@@ -1,8 +1,8 @@
 package com.codegym.voyai.service;
 
-import com.codegym.voyai.model.DestinationCost;
-import com.codegym.voyai.model.dto.DestinationCostDTO;
-import com.codegym.voyai.model.dto.UserContributionRequest;
+import com.codegym.voyai.entity.DestinationCost;
+import com.codegym.voyai.dto.response.DestinationCostDTO;
+import com.codegym.voyai.dto.request.UserContributionRequest;
 import com.codegym.voyai.repository.IDestinationCostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

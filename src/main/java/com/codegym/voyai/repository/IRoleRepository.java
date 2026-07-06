@@ -1,6 +1,6 @@
 package com.codegym.voyai.repository;
 
-import com.codegym.voyai.model.Role;
+import com.codegym.voyai.entity.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

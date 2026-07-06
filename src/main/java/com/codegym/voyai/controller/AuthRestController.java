@@ -1,12 +1,12 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.config.service.JwtService;
-import com.codegym.voyai.model.Role;
-import com.codegym.voyai.model.User;
-import com.codegym.voyai.model.UserPrinciple;
-import com.codegym.voyai.model.dto.AuthResponse;
-import com.codegym.voyai.model.dto.LoginRequest;
-import com.codegym.voyai.model.dto.RegisterRequest;
+import com.codegym.voyai.config.security.JwtService;
+import com.codegym.voyai.entity.Role;
+import com.codegym.voyai.entity.User;
+import com.codegym.voyai.entity.UserPrinciple;
+import com.codegym.voyai.dto.response.AuthResponse;
+import com.codegym.voyai.dto.request.LoginRequest;
+import com.codegym.voyai.dto.request.RegisterRequest;
 import com.codegym.voyai.repository.IRoleRepository;
 import com.codegym.voyai.service.TripService;
 import com.codegym.voyai.service.UserService;
@@ -25,7 +25,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import org.springframework.beans.factory.annotation.Value;
-import com.codegym.voyai.model.dto.GoogleAuthRequest;
+import com.codegym.voyai.dto.request.GoogleAuthRequest;
 
 import java.util.Collections;
 import java.util.Map;

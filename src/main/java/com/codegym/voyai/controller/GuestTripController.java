@@ -1,7 +1,7 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.Trip;
-import com.codegym.voyai.model.dto.TripRequest;
+import com.codegym.voyai.entity.Trip;
+import com.codegym.voyai.dto.request.TripRequest;
 import com.codegym.voyai.service.TripService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

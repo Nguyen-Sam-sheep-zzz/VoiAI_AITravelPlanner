@@ -1,8 +1,8 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.Activity;
-import com.codegym.voyai.model.Trip;
-import com.codegym.voyai.model.dto.ReorderRequest;
+import com.codegym.voyai.entity.Activity;
+import com.codegym.voyai.entity.Trip;
+import com.codegym.voyai.dto.request.ReorderRequest;
 import com.codegym.voyai.repository.IActivityRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

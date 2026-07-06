@@ -1,7 +1,7 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.dto.DestinationCostDTO;
-import com.codegym.voyai.model.dto.UserContributionRequest;
+import com.codegym.voyai.dto.response.DestinationCostDTO;
+import com.codegym.voyai.dto.request.UserContributionRequest;
 import com.codegym.voyai.service.DestinationCostService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

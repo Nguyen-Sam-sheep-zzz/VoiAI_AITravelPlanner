@@ -1,6 +1,6 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.Trip;
+import com.codegym.voyai.entity.Trip;
 import com.codegym.voyai.service.TripService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

@@ -1,10 +1,10 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.Role;
-import com.codegym.voyai.model.User;
-import com.codegym.voyai.model.dto.UserDTO;
-import com.codegym.voyai.config.service.JwtResponse;
-import com.codegym.voyai.config.service.JwtService;
+import com.codegym.voyai.entity.Role;
+import com.codegym.voyai.entity.User;
+import com.codegym.voyai.dto.response.UserDTO;
+import com.codegym.voyai.config.security.JwtResponse;
+import com.codegym.voyai.config.security.JwtService;
 import com.codegym.voyai.service.RoleService;
 import com.codegym.voyai.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;

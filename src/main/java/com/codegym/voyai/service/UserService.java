@@ -1,8 +1,8 @@
 package com.codegym.voyai.service;
 
-import com.codegym.voyai.model.User;
-import com.codegym.voyai.model.UserPrinciple;
-import com.codegym.voyai.model.dto.UserDTO;
+import com.codegym.voyai.entity.User;
+import com.codegym.voyai.entity.UserPrinciple;
+import com.codegym.voyai.dto.response.UserDTO;
 import com.codegym.voyai.repository.IUserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -77,7 +77,7 @@ public class UserService implements UserDetailsService {
         }
 
         // Tạo user mới nếu chưa tồn tại
-        com.codegym.voyai.model.Role userRole = roleRepository.findByName("ROLE_USER")
+        com.codegym.voyai.entity.Role userRole = roleRepository.findByName("ROLE_USER")
                 .orElseThrow(() -> new RuntimeException("Role ROLE_USER chưa có trong DB"));
 
         User newUser = User.builder()

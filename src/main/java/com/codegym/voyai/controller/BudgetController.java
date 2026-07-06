@@ -1,8 +1,8 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.BudgetEntry;
-import com.codegym.voyai.model.BudgetEntryRequest;
-import com.codegym.voyai.model.Trip;
+import com.codegym.voyai.entity.BudgetEntry;
+import com.codegym.voyai.entity.BudgetEntryRequest;
+import com.codegym.voyai.entity.Trip;
 import com.codegym.voyai.repository.IBudgetEntryRepository;
 import com.codegym.voyai.repository.ITripRepository;
 import lombok.RequiredArgsConstructor;

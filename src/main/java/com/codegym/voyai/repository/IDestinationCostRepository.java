@@ -1,6 +1,6 @@
 package com.codegym.voyai.repository;
 
-import com.codegym.voyai.model.DestinationCost;
+import com.codegym.voyai.entity.DestinationCost;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

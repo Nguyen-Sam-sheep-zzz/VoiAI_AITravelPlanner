@@ -1,6 +1,6 @@
 package com.codegym.voyai.config;
 
-import com.codegym.voyai.model.DestinationCost;
+import com.codegym.voyai.entity.DestinationCost;
 import com.codegym.voyai.repository.IDestinationCostRepository;
 import com.opencsv.CSVReader;
 import lombok.RequiredArgsConstructor;

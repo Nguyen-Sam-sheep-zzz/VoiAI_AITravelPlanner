@@ -1,9 +1,9 @@
 package com.codegym.voyai.service;
 
-import com.codegym.voyai.model.*;
-import com.codegym.voyai.model.dto.TripRequest;
-import com.codegym.voyai.model.dto.travel.TravelItinerary;
-import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
+import com.codegym.voyai.entity.*;
+import com.codegym.voyai.dto.request.TripRequest;
+import com.codegym.voyai.dto.external.travel.TravelItinerary;
+import com.codegym.voyai.dto.external.weather.DailyWeatherDTO;
 import com.codegym.voyai.repository.IActivityRepository;
 import com.codegym.voyai.repository.IDestinationCostRepository;
 import com.codegym.voyai.repository.ITripDayRepository;

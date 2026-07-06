@@ -1,7 +1,7 @@
 package com.codegym.voyai.service;
 
-import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
-import com.codegym.voyai.model.dto.weather.OpenMeteoResponse;
+import com.codegym.voyai.dto.external.weather.DailyWeatherDTO;
+import com.codegym.voyai.dto.external.weather.OpenMeteoResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;

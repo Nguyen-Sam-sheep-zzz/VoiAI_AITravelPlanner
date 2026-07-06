@@ -1,6 +1,6 @@
 package com.codegym.voyai.controller;
 
-import com.codegym.voyai.model.dto.weather.DailyWeatherDTO;
+import com.codegym.voyai.dto.external.weather.DailyWeatherDTO;
 import com.codegym.voyai.service.WeatherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

@@ -1,8 +1,8 @@
 package com.codegym.voyai.config;
 
-import com.codegym.voyai.model.rest.CustomAccessDeniedHandler;
-import com.codegym.voyai.model.rest.JwtAuthenticationTokenFilter;
-import com.codegym.voyai.model.rest.RestAuthenticationEntryPoint;
+import com.codegym.voyai.config.security.CustomAccessDeniedHandler;
+import com.codegym.voyai.config.security.JwtAuthenticationTokenFilter;
+import com.codegym.voyai.config.security.RestAuthenticationEntryPoint;
 import com.codegym.voyai.service.UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
